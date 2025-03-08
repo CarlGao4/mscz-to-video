@@ -38,6 +38,35 @@ import xml.etree.ElementTree as ET
 __version__ = "0.1"
 
 
+class FFmpegHelpAction(argparse.Action):
+    def __init__(self, option_strings, dest=argparse.SUPPRESS, default=argparse.SUPPRESS, help=None):
+        super(FFmpegHelpAction, self).__init__(
+            option_strings=option_strings, dest=dest, default=default, nargs=0, help=help
+        )
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print(file=sys.stderr)
+        print(
+            "This program will use FFMpeg to encode the video. "
+            "You can pass extra arguments to ffmpeg using --ffmpeg-arg-ext.",
+            file=sys.stderr,
+        )
+        print("By default, the ffmpeg command will be:", file=sys.stderr)
+        print(
+            "\x1b[1;37mffmpeg -y -r {fps} -f rawvideo -s {width}x{height}"
+            " -pix_fmt rgb24 -i - [Your arguments here] {output}\x1b[0m",
+            file=sys.stderr,
+        )
+        print("Your arguments will be inserted after the input file, but before the output file.", file=sys.stderr)
+        print("So you can add things like audio input, encoder settings, etc.", file=sys.stderr)
+        print(
+            "Before passing to ffmpeg, your command will be splited with shlex4all, so you can use quotes and escapes.",
+            file=sys.stderr,
+        )
+        print(file=sys.stderr)
+        parser.exit()
+
+
 parser = argparse.ArgumentParser(description="Convert MuseScore files to video")
 parser.add_argument("input_mscz", type=pathlib.Path, help="Input MuseScore file")
 parser.add_argument("output_video", type=pathlib.Path, help="Output video file")
@@ -133,7 +162,7 @@ parser.add_argument(
     metavar="STR",
     help="Extra ffmpeg arguments. Use --ffmpeg-help for more information",
 )
-parser.add_argument("--ffmpeg-help", action="store_true", dest="ffmpeg_help", help="Print help for ffmpeg arguments")
+parser.add_argument("--ffmpeg-help", action=FFmpegHelpAction, help="Print help for ffmpeg arguments")
 parser.add_argument(
     "-j", "--jobs", type=int, default=1, dest="jobs", metavar="UINT", help="Number of parallel jobs, default 1"
 )
@@ -192,26 +221,6 @@ parser.add_argument(
 parser.add_argument("--smooth-cursor", action="store_true", dest="smooth_cursor", help="Smooth cursor movement")
 parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 args = parser.parse_args()
-
-if args.ffmpeg_help:
-    print(
-        "This program will use FFMpeg to encode the video. "
-        "You can pass extra arguments to ffmpeg using --ffmpeg-arg-ext.",
-        file=sys.stderr,
-    )
-    print("By default, the ffmpeg command will be:", file=sys.stderr)
-    print(
-        "\x1b[1;37mffmpeg -y -r {fps} -f rawvideo -s {width}x{height}"
-        " -pix_fmt rgb24 -i - [Your arguments here] {output}\x1b[0m",
-        file=sys.stderr,
-    )
-    print("Your arguments will be inserted after the input file, but before the output file.", file=sys.stderr)
-    print("So you can add things like audio input, encoder settings, etc.", file=sys.stderr)
-    print(
-        "Before passing to ffmpeg, your command will be splited using shlex module, so you can use quotes and escapes.",
-        file=sys.stderr,
-    )
-    raise SystemExit(0)
 
 if args.allow_large_picture:
     PIL.ImageFile.LOAD_TRUNCATED_IMAGES = True
