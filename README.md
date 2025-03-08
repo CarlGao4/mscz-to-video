@@ -3,6 +3,8 @@ Render a MuseScore file to a video file
 
 <video src="Flower Dance.mp4" controls="controls" width="100%">Your browser does not support the video tag.</video>
 
+*Here should be a sample video. Please go to [GitHub Pages](https://carlgao4.github.io/mscz-to-video/) to view the video.*
+
 ## Features
 
 - [x] Export MuseScore file to video
