@@ -1,7 +1,7 @@
 # mscz-to-video
 Render a MuseScore file to a video file
 
-<video src="Flower Dance.mp4" controls="controls" width="100%">Your browser does not support the video tag.</video>
+<video controls playsinline style="width:100%;height:fit-content;padding-bottom:56.25%;overflow-y:hidden" class="video-js" data-setup="{}"><source src="https://mscz-video.carlgao4.workers.dev/FlowerDance/FlowerDance.m3u8">Your browser does not support the video tag.</video>
 
 *Here should be a sample video. Please go to [GitHub Pages](https://carlgao4.github.io/mscz-to-video/) to view the video.*
 
@@ -12,7 +12,8 @@ Render a MuseScore file to a video file
 - [x] Manually set highlight color and transparency
 - [x] Smooth cursor movement between notes
 - [x] Parallel rendering
-- [x] Accelerate with PyTorch including GPU support and JIT compilation 
+- [x] Accelerate with PyTorch including GPU support and JIT compilation (Speed can reach about 4K 52fps on single 4060m GPU)
+- [x] Resize function to crop or rescale each page so current note and bar will always be in the center
 - [x] Multi GPU support
 - [ ] Automatically audio support
 

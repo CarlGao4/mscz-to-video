@@ -8,7 +8,7 @@ on:
     paths:
       - README.md
       - .github/workflows/jekyll-gh-pages.yml
-      - "*.mp4"
+      - _source
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -36,16 +36,12 @@ jobs:
         uses: actions/configure-pages@v5
       - name: Prepare data
         run: |
-          mkdir _source
-          mv README.md ./_source/
+          mv README.md ./pages/
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@v1
         with:
-          source: ./_source
+          source: ./pages
           destination: ./_site
-      - name: Copy video
-        run: |
-          sudo mv "Flower Dance.mp4" ./_site/
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
 
