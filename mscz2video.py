@@ -212,19 +212,12 @@ parser.add_argument(
     dest="use_svg",
     help="Use SVG exported by MuseScore instead of PNG. May clearer and requires CairoSVG but may fail sometimes",
 )
-parser.add_argument(
-    "--allow-large-picture",
-    action="store_true",
-    dest="allow_large_picture",
-    help="Allow reading large picture with PIL",
-)
 parser.add_argument("--smooth-cursor", action="store_true", dest="smooth_cursor", help="Smooth cursor movement")
 parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 args = parser.parse_args()
 
-if args.allow_large_picture:
-    PIL.ImageFile.LOAD_TRUNCATED_IMAGES = True
-    PIL.Image.MAX_IMAGE_PIXELS = None
+PIL.ImageFile.LOAD_TRUNCATED_IMAGES = True
+PIL.Image.MAX_IMAGE_PIXELS = None
 
 # Load MuseScore file data
 print("Converting MuseScore file to json...", file=sys.stderr)
@@ -775,6 +768,7 @@ def get_frame(frame_id, t):
                 min(bar_box[2] - box[0], args.size[0]),
                 min(bar_box[3] - box[1], args.size[1]),
             )
+            overlay_area = bar_box_offseted
             overlay[bar_box_offseted[1] : bar_box_offseted[3], bar_box_offseted[0] : bar_box_offseted[2]] = color
         # Draw current note
         if args.note_alpha > 0:
@@ -785,13 +779,15 @@ def get_frame(frame_id, t):
                 min(note_box[2] - box[0], args.size[0]),
                 min(note_box[3] - box[1], args.size[1]),
             )
+            overlay_area = note_box_offseted
             overlay[note_box_offseted[1] : note_box_offseted[3], note_box_offseted[0] : note_box_offseted[2]] = color
-        overlay_area = (
-            min(bar_box_offseted[1], note_box_offseted[1]),
-            max(bar_box_offseted[3], note_box_offseted[3]),
-            min(bar_box_offseted[0], note_box_offseted[0]),
-            max(bar_box_offseted[2], note_box_offseted[2]),
-        )
+        if args.bar_alpha > 0 and args.note_alpha > 0:
+            overlay_area = (
+                min(bar_box_offseted[1], note_box_offseted[1]),
+                max(bar_box_offseted[3], note_box_offseted[3]),
+                min(bar_box_offseted[0], note_box_offseted[0]),
+                max(bar_box_offseted[2], note_box_offseted[2]),
+            )
         if overlay.any():
             overlay /= 255
             overlay[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3] *= img[
