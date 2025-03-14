@@ -672,10 +672,9 @@ class Converter:
                     (
                         self._t
                         if self._t != float("inf")
-                        else (self._notes[-1][0] + (self._start_offset + self._end_offset - self._ss) * 1000)
+                        else (self._notes[-1][0] / 1000 + self._start_offset + self._end_offset - self._ss)
                     )
                     * self._fps
-                    / 1000
                 )
                 + 1
             )
