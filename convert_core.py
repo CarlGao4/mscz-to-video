@@ -581,7 +581,7 @@ class Converter:
         t: float = float("inf"),
         no_device_cache: bool = False,
         ffmpeg_arg_ext: list[str] = [],
-        wait: bool = False,
+        callback: typing.Optional[typing.Callable[[int, int, int, int, bytes], None]] = None,
     ):
 
         with self._convert_lock:
@@ -597,6 +597,7 @@ class Converter:
             self._ss = ss
             self._jobs = jobs
             self._resize_method = resize_method
+            self._callback = callback
 
             if self._use_torch:
                 global _resize_torch
@@ -772,8 +773,6 @@ class Converter:
                         for device in self._torch_devices
                     }
 
-            self._finish_event = threading.Event()
-
             try:
                 threads = []
                 t = threading.Thread(target=self._send_thread, daemon=True)
@@ -790,8 +789,6 @@ class Converter:
                     t = threading.Thread(target=self._worker_thread, daemon=True)
                     t.start()
                     threads.append(t)
-                if not wait:
-                    return self._finish_event
                 while sum(1 for t in threads[3:] if t.is_alive()) > 0:
                     for t in threads:
                         t.join(0.1)
@@ -802,9 +799,11 @@ class Converter:
                 self._stop = True
                 send_thread_obj.join()
             finally:
-                if wait:
+                try:
                     self._ffmpeg.stdin.close()
                     self._ffmpeg.wait()
+                except Exception:
+                    pass
 
     def _worker_thread(self):
         while True:
@@ -835,19 +834,24 @@ class Converter:
                         break
                     while self._next_to_send in self._frame_key_map:
                         key = self._frame_key_map.pop(self._next_to_send)
+                        frame = self._cached_frames[key]
                         if key in self._cached_frames:
-                            self._ffmpeg.stdin.write(self._cached_frames[key])
+                            self._ffmpeg.stdin.write(frame)
                         self._ffmpeg.stdin.flush()
+                        if self._callback:
+                            self._callback(self._next_to_send, self._total_frames, *self._size, frame)
                         self._next_to_send += 1
                         self._send_event.clear()
         finally:
             self._ffmpeg.stdin.close()
             self._stop = True
-            self._finish_event.set()
+            self._all_done = True
 
     def _ffmpeg_output_thread(self):
         ffmpeg_output = b""
         while True:
+            if self._stop:
+                break
             o = self._ffmpeg.stderr.read(1)
             if not o:
                 break
@@ -873,3 +877,5 @@ class Converter:
             sys.stderr.buffer.write(self._ffmpeg_status + b"     \r")
             sys.stderr.buffer.flush()
             self._update_status.clear()
+            if self._stop:
+                break
