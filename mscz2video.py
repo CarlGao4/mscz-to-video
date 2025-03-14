@@ -20,9 +20,9 @@
 import argparse
 import pathlib
 import sys
+import webcolors
 
 import convert_core
-import shlex4all
 
 
 class FFmpegHelpAction(argparse.Action):
@@ -35,7 +35,7 @@ class FFmpegHelpAction(argparse.Action):
         print(file=sys.stderr)
         print(
             "This program will use FFMpeg to encode the video. "
-            "You can pass extra arguments to ffmpeg using --ffmpeg-arg-ext.",
+            'You can pass extra arguments to ffmpeg, all arguments after "--" will be passed to ffmpeg.',
             file=sys.stderr,
         )
         print("By default, the ffmpeg command will be:", file=sys.stderr)
@@ -67,8 +67,8 @@ parser.add_argument(
 )
 parser.add_argument(
     "--bar-color",
-    type=str,
-    default="#f00",
+    type=webcolors.html5_parse_legacy_color,
+    default=(255, 0, 0),
     dest="bar_color",
     metavar="COLOR",
     help="Color of current bar, default red, support 3/6 digits rgb (begin with #) and color names in HTML format",
@@ -78,8 +78,8 @@ parser.add_argument(
 )
 parser.add_argument(
     "--note-color",
-    type=str,
-    default="#0ff",
+    type=webcolors.html5_parse_legacy_color,
+    default=(0, 255, 255),
     dest="note_color",
     metavar="COLOR",
     help="Color of current note, default cyan, support 3/6 digits rgb (begin with #) and color names in HTML format",
@@ -141,14 +141,6 @@ parser.add_argument(
     metavar="FLOAT",
     help="Duration in seconds, default to the end of the song",
 )
-parser.add_argument(
-    "--ffmpeg-arg-ext",
-    type=shlex4all.split,
-    default="",
-    dest="ffmpeg_arg_ext",
-    metavar="STR",
-    help="Extra ffmpeg arguments. Use --ffmpeg-help for more information",
-)
 parser.add_argument("--ffmpeg-help", action=FFmpegHelpAction, help="Print help for ffmpeg arguments")
 parser.add_argument(
     "-j", "--jobs", type=int, default=1, dest="jobs", metavar="UINT", help="Number of parallel jobs, default 1"
@@ -201,7 +193,12 @@ parser.add_argument(
 )
 parser.add_argument("--smooth-cursor", action="store_true", dest="smooth_cursor", help="Smooth cursor movement")
 parser.add_argument("--version", action="version", version=f"%(prog)s {convert_core.__version__}")
-args = parser.parse_args()
+if "--" in sys.argv:
+    args = parser.parse_args(sys.argv[1 : sys.argv.index("--")])
+    ffmpeg_arg_ext = sys.argv[sys.argv.index("--") + 1 :]
+else:
+    args = parser.parse_args()
+    ffmpeg_arg_ext = []
 
 converter = convert_core.Converter(
     cache_limit=args.cache_limit,
@@ -227,7 +224,7 @@ converter.convert(
     args.output_video,
     fps=args.fps,
     t=args.t,
-    ffmpeg_arg_ext=args.ffmpeg_arg_ext,
+    ffmpeg_arg_ext=ffmpeg_arg_ext,
     no_device_cache=args.no_device_cache,
     wait=True,
 )

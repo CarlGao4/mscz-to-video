@@ -29,7 +29,6 @@ import sys
 import threading
 import time
 import typing
-import webcolors
 import xml.etree.ElementTree as ET
 
 __version__ = "0.1"
@@ -86,9 +85,9 @@ class Converter:
         smooth_cursor: bool = False,
         size: typing.Optional[tuple[int, int]] = None,
         bar_alpha: int = 85,
-        bar_color: str = "#FF0000",
+        bar_color: tuple[int, int, int] = (255, 0, 0),
         note_alpha: int = 85,
-        note_color: str = "#00FFFF",
+        note_color: tuple[int, int, int] = (0, 255, 255),
         start_offset: float = 0.0,
         end_offset: float = 0.0,
         ss: float = 0.0,
@@ -147,22 +146,102 @@ class Converter:
             if sum(d["max_jobs"] for d in self._torch_devices.values()) < self._jobs:
                 raise ValueError("Not enough max jobs in torch devices")
 
-            @torch.jit.script
-            def _resize_and_crop_to_torch(
-                img: torch.Tensor, w: int, h: int, l: int, t: int, r: int, b: int, fallback_cpu: bool = False
-            ) -> tuple[torch.Tensor, tuple[int, int, int, int]]:
-                # First resize the input image to ensure img.width == w or img.height == h
-                # Image ratio is preserved, but the other dimension may be larger than the target
-                width = img.shape[1]
-                height = img.shape[0]
-                if width / w > height / h:
-                    # Target ratio is taller than the image
-                    rescale_ratio = h / height
-                    if fallback_cpu:
+            if "_resize_torch" not in globals():
+
+                @torch.jit.script
+                def _resize_and_crop_to_torch(
+                    img: torch.Tensor, w: int, h: int, l: int, t: int, r: int, b: int, fallback_cpu: bool = False
+                ) -> tuple[torch.Tensor, tuple[int, int, int, int]]:
+                    # First resize the input image to ensure img.width == w or img.height == h
+                    # Image ratio is preserved, but the other dimension may be larger than the target
+                    width = img.shape[1]
+                    height = img.shape[0]
+                    if width / w > height / h:
+                        # Target ratio is taller than the image
+                        rescale_ratio = h / height
+                        if fallback_cpu:
+                            img = (
+                                torch.nn.functional.interpolate(
+                                    img[None, ...].permute(0, 3, 1, 2).cpu().to(torch.float32),
+                                    size=(h, int(width * rescale_ratio)),
+                                    mode="bicubic",
+                                    align_corners=False,
+                                    antialias=True,
+                                )
+                                .to(img.device)
+                                .permute(0, 2, 3, 1)
+                                .squeeze(0)
+                                .clamp(0, 1)
+                                .to(torch.float16)
+                            )
+                        else:
+                            img = (
+                                torch.nn.functional.interpolate(
+                                    img[None, ...].permute(0, 3, 1, 2).to(torch.float32),
+                                    size=(h, int(width * rescale_ratio)),
+                                    mode="bicubic",
+                                    align_corners=False,
+                                    antialias=True,
+                                )
+                                .permute(0, 2, 3, 1)
+                                .squeeze(0)
+                                .clamp(0, 1)
+                                .to(torch.float16)
+                            )
+                        width, height = img.shape[1], img.shape[0]
+                        x_center = (l + r) / 2 * rescale_ratio
+                        x_left = int(x_center - w / 2)
+                        if x_left < 0:
+                            x_left = 0
+                        elif x_left + w > width:
+                            x_left = width - w
+                        x_right = x_left + w
+                        return img[:, x_left:x_right, :], (
+                            int(x_left / rescale_ratio),
+                            0,
+                            int(x_right / rescale_ratio),
+                            height,
+                        )
+                    else:
+                        # Target ratio is wider than the image
+                        rescale_ratio = w / width
                         img = (
                             torch.nn.functional.interpolate(
+                                img[None, ...].permute(0, 3, 1, 2).to(torch.float32),
+                                size=(int(height * rescale_ratio), w),
+                                mode="bicubic",
+                                align_corners=False,
+                                antialias=True,
+                            )
+                            .permute(0, 2, 3, 1)
+                            .squeeze(0)
+                            .clamp(0, 1)
+                            .to(torch.float16)
+                        )
+                        width, height = img.shape[1], img.shape[0]
+                        y_center = (t + b) / 2 * rescale_ratio
+                        y_top = int(y_center - h / 2)
+                        if y_top < 0:
+                            y_top = 0
+                        elif y_top + h > height:
+                            y_top = height - h
+                        y_bottom = y_top + h
+                        return img[y_top:y_bottom, :], (
+                            0,
+                            int(y_top / rescale_ratio),
+                            width,
+                            int(y_bottom / rescale_ratio),
+                        )
+
+                @torch.jit.script
+                def _direct_resize_to_torch(
+                    img: torch.Tensor, w: int, h: int, l: int, t: int, r: int, b: int, fallback_cpu: bool = False
+                ) -> tuple[torch.Tensor, tuple[int, int, int, int]]:
+                    if fallback_cpu:
+                        return (
+                            torch.nn.functional.interpolate(
                                 img[None, ...].permute(0, 3, 1, 2).cpu().to(torch.float32),
-                                size=(h, int(width * rescale_ratio)),
+                                size=(h, w),
                                 mode="bicubic",
                                 align_corners=False,
                                 antialias=True,
@@ -171,13 +250,14 @@ class Converter:
                             .permute(0, 2, 3, 1)
                             .squeeze(0)
                             .clamp(0, 1)
-                            .to(torch.float16)
+                            .to(torch.float16),
+                            (0, 0, img.shape[1], img.shape[0]),
                         )
                     else:
-                        img = (
+                        return (
                             torch.nn.functional.interpolate(
                                 img[None, ...].permute(0, 3, 1, 2).to(torch.float32),
-                                size=(h, int(width * rescale_ratio)),
+                                size=(h, w),
                                 mode="bicubic",
                                 align_corners=False,
                                 antialias=True,
@@ -186,81 +266,7 @@ class Converter:
                             .squeeze(0)
                             .clamp(0, 1)
                             .to(torch.float16)
-                        )
-                    width, height = img.shape[1], img.shape[0]
-                    x_center = (l + r) / 2 * rescale_ratio
-                    x_left = int(x_center - w / 2)
-                    if x_left < 0:
-                        x_left = 0
-                    elif x_left + w > width:
-                        x_left = width - w
-                    x_right = x_left + w
-                    return img[:, x_left:x_right, :], (
-                        int(x_left / rescale_ratio),
-                        0,
-                        int(x_right / rescale_ratio),
-                        height,
-                    )
-                else:
-                    # Target ratio is wider than the image
-                    rescale_ratio = w / width
-                    img = (
-                        torch.nn.functional.interpolate(
-                            img[None, ...].permute(0, 3, 1, 2).to(torch.float32),
-                            size=(int(height * rescale_ratio), w),
-                            mode="bicubic",
-                            align_corners=False,
-                            antialias=True,
-                        )
-                        .permute(0, 2, 3, 1)
-                        .squeeze(0)
-                        .clamp(0, 1)
-                        .to(torch.float16)
-                    )
-                    width, height = img.shape[1], img.shape[0]
-                    y_center = (t + b) / 2 * rescale_ratio
-                    y_top = int(y_center - h / 2)
-                    if y_top < 0:
-                        y_top = 0
-                    elif y_top + h > height:
-                        y_top = height - h
-                    y_bottom = y_top + h
-                    return img[y_top:y_bottom, :], (0, int(y_top / rescale_ratio), width, int(y_bottom / rescale_ratio))
-
-            @torch.jit.script
-            def _direct_resize_to_torch(
-                img: torch.Tensor, w: int, h: int, l: int, t: int, r: int, b: int, fallback_cpu: bool = False
-            ) -> tuple[torch.Tensor, tuple[int, int, int, int]]:
-                if fallback_cpu:
-                    return (
-                        torch.nn.functional.interpolate(
-                            img[None, ...].permute(0, 3, 1, 2).cpu().to(torch.float32),
-                            size=(h, w),
-                            mode="bicubic",
-                            align_corners=False,
-                            antialias=True,
-                        )
-                        .to(img.device)
-                        .permute(0, 2, 3, 1)
-                        .squeeze(0)
-                        .clamp(0, 1)
-                        .to(torch.float16),
-                        (0, 0, img.shape[1], img.shape[0]),
-                    )
-                else:
-                    return (
-                        torch.nn.functional.interpolate(
-                            img[None, ...].permute(0, 3, 1, 2).to(torch.float32),
-                            size=(h, w),
-                            mode="bicubic",
-                            align_corners=False,
-                            antialias=True,
-                        )
-                        .permute(0, 2, 3, 1)
-                        .squeeze(0)
-                        .clamp(0, 1)
-                        .to(torch.float16)
-                    ), (0, 0, img.shape[1], img.shape[0])
+                        ), (0, 0, img.shape[1], img.shape[0])
 
             if resize_method == "crop":
                 _resize_torch = _resize_and_crop_to_torch
@@ -269,61 +275,65 @@ class Converter:
             else:
                 raise ValueError("Invalid resize method")
 
-            @torch.jit.script
-            def _process_torch(
-                img: torch.Tensor,
-                bar_box: tuple[int, int, int, int],
-                note_box: tuple[int, int, int, int],
-                out_size: tuple[int, int],
-                device: torch.device,
-                bar_color: torch.Tensor,
-                note_color: torch.Tensor,
-            ) -> torch.Tensor:
-                img, box = _resize_torch(img, *out_size, *note_box, "xpu" in device.type)
-                overlay = torch.zeros_like(img, dtype=torch.float16, device=device)
-                bar_box_offseted = (
-                    max(bar_box[0] - box[0], 0),
-                    max(bar_box[1] - box[1], 0),
-                    min(bar_box[2] - box[0], out_size[0]),
-                    min(bar_box[3] - box[1], out_size[1]),
-                )
-                note_box_offseted = (
-                    max(note_box[0] - box[0], 0),
-                    max(note_box[1] - box[1], 0),
-                    min(note_box[2] - box[0], out_size[0]),
-                    min(note_box[3] - box[1], out_size[1]),
-                )
-                # Draw current bar
-                overlay[bar_box_offseted[1] : bar_box_offseted[3], bar_box_offseted[0] : bar_box_offseted[2]] = (
-                    bar_color
-                )
-                # Draw current note
-                overlay[note_box_offseted[1] : note_box_offseted[3], note_box_offseted[0] : note_box_offseted[2]] = (
-                    note_color
-                )
-                overlay_area = (
-                    min(bar_box_offseted[1], note_box_offseted[1]),
-                    max(bar_box_offseted[3], note_box_offseted[3]),
-                    min(bar_box_offseted[0], note_box_offseted[0]),
-                    max(bar_box_offseted[2], note_box_offseted[2]),
-                )
-                if overlay.any():
-                    overlay /= torch.tensor(255.0, dtype=torch.float16, device=device)
-                    overlay[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3] *= img[
-                        overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3
-                    ]
-                    overlay[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3] *= overlay[
-                        overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], 3, None
-                    ]
-                    img[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3] *= (
-                        torch.tensor(1.0, dtype=torch.float16, device=device)
-                        - overlay[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], 3, None]
+            if "_process_torch" not in globals():
+
+                @torch.jit.script
+                def _process_torch(
+                    img: torch.Tensor,
+                    bar_box: tuple[int, int, int, int],
+                    note_box: tuple[int, int, int, int],
+                    out_size: tuple[int, int],
+                    device: torch.device,
+                    bar_color: torch.Tensor,
+                    note_color: torch.Tensor,
+                ) -> torch.Tensor:
+                    img, box = _resize_torch(img, *out_size, *note_box, "xpu" in device.type)
+                    overlay = torch.zeros_like(img, dtype=torch.float16, device=device)
+                    bar_box_offseted = (
+                        max(bar_box[0] - box[0], 0),
+                        max(bar_box[1] - box[1], 0),
+                        min(bar_box[2] - box[0], out_size[0]),
+                        min(bar_box[3] - box[1], out_size[1]),
                     )
-                    img[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3] += overlay[
-                        overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3
-                    ]
-                    img[..., 3] = torch.tensor(1.0, dtype=torch.float16, device=device)
-                return (img[..., :3] * torch.tensor(255.0, dtype=torch.float16, device=device)).to(torch.uint8).cpu()
+                    note_box_offseted = (
+                        max(note_box[0] - box[0], 0),
+                        max(note_box[1] - box[1], 0),
+                        min(note_box[2] - box[0], out_size[0]),
+                        min(note_box[3] - box[1], out_size[1]),
+                    )
+                    # Draw current bar
+                    overlay[bar_box_offseted[1] : bar_box_offseted[3], bar_box_offseted[0] : bar_box_offseted[2]] = (
+                        bar_color
+                    )
+                    # Draw current note
+                    overlay[
+                        note_box_offseted[1] : note_box_offseted[3], note_box_offseted[0] : note_box_offseted[2]
+                    ] = note_color
+                    overlay_area = (
+                        min(bar_box_offseted[1], note_box_offseted[1]),
+                        max(bar_box_offseted[3], note_box_offseted[3]),
+                        min(bar_box_offseted[0], note_box_offseted[0]),
+                        max(bar_box_offseted[2], note_box_offseted[2]),
+                    )
+                    if overlay.any():
+                        overlay /= torch.tensor(255.0, dtype=torch.float16, device=device)
+                        overlay[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3] *= img[
+                            overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3
+                        ]
+                        overlay[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3] *= overlay[
+                            overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], 3, None
+                        ]
+                        img[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3] *= (
+                            torch.tensor(1.0, dtype=torch.float16, device=device)
+                            - overlay[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], 3, None]
+                        )
+                        img[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3] += overlay[
+                            overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3
+                        ]
+                        img[..., 3] = torch.tensor(1.0, dtype=torch.float16, device=device)
+                    return (
+                        (img[..., :3] * torch.tensor(255.0, dtype=torch.float16, device=device)).to(torch.uint8).cpu()
+                    )
 
         if resize_method == "crop":
             self._resize = self._resize_and_crop_to
@@ -419,10 +429,9 @@ class Converter:
         return img.resize((w, h), resample=PIL.Image.BICUBIC), (0, 0, img.width, img.height)
 
     def _get_frame(self, frame_id, t):
-        global next_to_send, program_status
         while len(self._frame_key_map) > self._cache_limit:
             time.sleep(0.1)
-        program_status = "%40s" % f"Generating frame at {t:.0f}ms"
+        self._program_status = "%40s" % f"Generating frame {frame_id}/{self._total_frames} ({t/1000:.2f}s)"
         self._update_status.set()
         with self._lock:
             actual_time = t - self._start_offset * 1000 + self._ss * 1000
@@ -475,8 +484,6 @@ class Converter:
             if not self._use_torch
             else self._pngs[device_value["name"]][page].to(device).clone()
         )
-        program_status = "%40s" % f"Processing note {note_idx+1}/{len(self._notes)} at {t:.0f}ms"
-        self._update_status.set()
 
         # Draw bar and note highlights
         if not self._use_torch:
@@ -485,7 +492,7 @@ class Converter:
             overlay = np.zeros_like(img, dtype=np.float16)
             # Draw current bar
             if self._bar_alpha > 0:
-                color = webcolors.html5_parse_legacy_color(self._bar_color) + (self._bar_alpha,)
+                color = self._bar_color + (self._bar_alpha,)
                 bar_box_offseted = (
                     max(bar_box[0] - box[0], 0),
                     max(bar_box[1] - box[1], 0),
@@ -496,7 +503,7 @@ class Converter:
                 overlay[bar_box_offseted[1] : bar_box_offseted[3], bar_box_offseted[0] : bar_box_offseted[2]] = color
             # Draw current note
             if self._note_alpha > 0:
-                color = webcolors.html5_parse_legacy_color(self._note_color) + (self._note_alpha,)
+                color = self._note_color + (self._note_alpha,)
                 note_box_offseted = (
                     max(note_box[0] - box[0], 0),
                     max(note_box[1] - box[1], 0),
@@ -540,12 +547,12 @@ class Converter:
                     self._size,
                     device,
                     torch.tensor(
-                        webcolors.html5_parse_legacy_color(self._bar_color) + (self._bar_alpha,),
+                        self._bar_color + (self._bar_alpha,),
                         dtype=torch.float16,
                         device=device,
                     ),
                     torch.tensor(
-                        webcolors.html5_parse_legacy_color(self._note_color) + (self._note_alpha,),
+                        self._note_color + (self._note_alpha,),
                         dtype=torch.float16,
                         device=device,
                     ),
@@ -655,6 +662,15 @@ class Converter:
             self._send_event = threading.Event()
             self._stop = False
             self._all_done = False
+            self._total_frames = int(
+                (
+                    self._t
+                    if self._t != float("inf")
+                    else (self._notes[-1][0] + (self._start_offset + self._end_offset - self._ss) * 1000)
+                )
+                * self._fps
+                / 1000
+            ) + 1
 
             print("Rescaling MuseScore pages...", end="\r", file=sys.stderr)
             if self._resize_method == "rescale":
@@ -788,7 +804,7 @@ class Converter:
             with self._lock:
                 t = self._current_frame
                 self._current_frame += 1
-            if t > self._t * self._fps:
+            if t > min(self._t * self._fps, self._total_frames):
                 self._stop = True
                 self._all_done = True
                 break
