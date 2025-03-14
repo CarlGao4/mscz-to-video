@@ -79,72 +79,21 @@ class CacheWithQueue:
 class Converter:
     def __init__(
         self,
-        cache_limit: int = 100,
         use_torch: bool = False,
-        torch_devices: str = "cpu",
-        smooth_cursor: bool = False,
-        size: typing.Optional[tuple[int, int]] = None,
-        bar_alpha: int = 85,
-        bar_color: tuple[int, int, int] = (255, 0, 0),
-        note_alpha: int = 85,
-        note_color: tuple[int, int, int] = (0, 255, 255),
-        start_offset: float = 0.0,
-        end_offset: float = 0.0,
-        ss: float = 0.0,
         ffmpeg_path: str = "ffmpeg",
         musescore_path: str = "musescore",
-        use_svg: bool = False,
-        jobs: int = 1,
-        resize_method: typing.Union[typing.Literal["crop", "rescale"]] = "rescale",
     ):
-        self._cache_limit = cache_limit
         self._use_torch = use_torch
-        self._smooth_cursor = smooth_cursor
-        self._size = size
-        self._bar_alpha = bar_alpha
-        self._bar_color = bar_color
-        self._note_alpha = note_alpha
-        self._note_color = note_color
-        self._start_offset = start_offset
-        self._end_offset = end_offset
-        self._ss = ss
         self._ffmpeg_path = ffmpeg_path
         self._musescore_path = musescore_path
-        self._use_svg = use_svg
-        self._jobs = jobs
-        self._resize_method = resize_method
         self._convert_lock = threading.Lock()
         self._lock = threading.RLock()
         self._ffmpeg_status = b""
         self._program_status = ""
         self._update_status = threading.Event()
         if self._use_torch:
-            global torch, _resize_torch, _process_torch
+            global torch, _process_torch, _resize_torch, _direct_resize_to_torch, _resize_and_crop_to_torch
             import torch
-
-            if "xpu" in torch_devices:
-                import intel_extension_for_pytorch as ipex
-
-            self._torch_devices = {}
-            for device in torch_devices.split(";"):
-                if "," in device:
-                    device, max_jobs = device.split(",")
-                    max_jobs = int(max_jobs)
-                    self._torch_devices[device] = {
-                        "device": torch.device(device),
-                        "max_jobs": max_jobs,
-                        "current_jobs": 0,
-                        "name": device,
-                    }
-                else:
-                    self._torch_devices[device] = {
-                        "device": torch.device(device),
-                        "max_jobs": float("inf"),
-                        "current_jobs": 0,
-                        "name": device,
-                    }
-            if sum(d["max_jobs"] for d in self._torch_devices.values()) < self._jobs:
-                raise ValueError("Not enough max jobs in torch devices")
 
             if "_resize_torch" not in globals():
 
@@ -268,12 +217,7 @@ class Converter:
                             .to(torch.float16)
                         ), (0, 0, img.shape[1], img.shape[0])
 
-            if resize_method == "crop":
-                _resize_torch = _resize_and_crop_to_torch
-            elif resize_method == "rescale":
-                _resize_torch = _direct_resize_to_torch
-            else:
-                raise ValueError("Invalid resize method")
+            _resize_torch = _resize_and_crop_to_torch
 
             if "_process_torch" not in globals():
 
@@ -335,14 +279,8 @@ class Converter:
                         (img[..., :3] * torch.tensor(255.0, dtype=torch.float16, device=device)).to(torch.uint8).cpu()
                     )
 
-        if resize_method == "crop":
-            self._resize = self._resize_and_crop_to
-        elif resize_method == "rescale":
-            self._resize = self._direct_resize_to
-        else:
-            raise ValueError("Invalid resize method")
-
-    def load_score(self, input_mscz: pathlib.Path):
+    def load_score(self, input_mscz: pathlib.Path, use_svg: bool = False):
+        self._use_svg = use_svg
         musescore = subprocess.Popen(
             [
                 self._musescore_path,
@@ -372,9 +310,6 @@ class Converter:
                 self._pngs.append(np.array(PIL.Image.open(b).convert("RGBA")).astype(np.float16) / 255)
             print("Reading png... Done          ", file=sys.stderr)
             self._highlight_ratio = (12, 12)
-
-        if self._size is None:
-            self._size = self._pngs[0].shape[1], self._pngs[0].shape[0]
 
         self._bars: list[tuple[int, int]] = []
         self._notes: list[tuple[int, int]] = []
@@ -629,13 +564,83 @@ class Converter:
     def convert(
         self,
         output_path: pathlib.Path,
+        cache_limit: int = 100,
+        smooth_cursor: bool = False,
+        size: typing.Optional[tuple[int, int]] = None,
+        bar_alpha: int = 85,
+        bar_color: tuple[int, int, int] = (255, 0, 0),
+        note_alpha: int = 85,
+        note_color: tuple[int, int, int] = (0, 255, 255),
+        start_offset: float = 0.0,
+        end_offset: float = 0.0,
+        ss: float = 0.0,
+        jobs: int = 1,
+        resize_method: typing.Union[typing.Literal["crop", "rescale"]] = "rescale",
+        torch_devices: str = "cpu",
         fps: int = 60,
         t: float = float("inf"),
         no_device_cache: bool = False,
         ffmpeg_arg_ext: list[str] = [],
         wait: bool = False,
     ):
+
         with self._convert_lock:
+            self._cache_limit = cache_limit
+            self._smooth_cursor = smooth_cursor
+            self._size = size
+            self._bar_alpha = bar_alpha
+            self._bar_color = bar_color
+            self._note_alpha = note_alpha
+            self._note_color = note_color
+            self._start_offset = start_offset
+            self._end_offset = end_offset
+            self._ss = ss
+            self._jobs = jobs
+            self._resize_method = resize_method
+
+            if self._use_torch:
+                global _resize_torch
+                self._torch_devices = {}
+                if "xpu" in torch_devices:
+                    import intel_extension_for_pytorch as ipex
+                for device in torch_devices.split(";"):
+                    if "," in device:
+                        device, max_jobs = device.split(",")
+                        max_jobs = int(max_jobs)
+                        self._torch_devices[device] = {
+                            "device": torch.device(device),
+                            "max_jobs": max_jobs,
+                            "current_jobs": 0,
+                            "name": device,
+                        }
+                    else:
+                        self._torch_devices[device] = {
+                            "device": torch.device(device),
+                            "max_jobs": float("inf"),
+                            "current_jobs": 0,
+                            "name": device,
+                        }
+
+                if sum(d["max_jobs"] for d in self._torch_devices.values()) < self._jobs:
+                    raise ValueError("Not enough max jobs in torch devices")
+
+                if resize_method == "crop":
+                    _resize_torch = _resize_and_crop_to_torch
+                elif resize_method == "rescale":
+                    _resize_torch = _direct_resize_to_torch
+                else:
+                    raise ValueError("Invalid resize method")
+
+            if resize_method == "crop":
+                self._resize = self._resize_and_crop_to
+            elif resize_method == "rescale":
+                self._resize = self._direct_resize_to
+            else:
+                raise ValueError("Invalid resize method")
+
+            if self._size is None:
+                self._size = self._pngs[0].shape[1], self._pngs[0].shape[0]
+
             self._fps = fps
             self._t = t
             ffmpeg_command = [
@@ -662,15 +667,18 @@ class Converter:
             self._send_event = threading.Event()
             self._stop = False
             self._all_done = False
-            self._total_frames = int(
-                (
-                    self._t
-                    if self._t != float("inf")
-                    else (self._notes[-1][0] + (self._start_offset + self._end_offset - self._ss) * 1000)
+            self._total_frames = (
+                int(
+                    (
+                        self._t
+                        if self._t != float("inf")
+                        else (self._notes[-1][0] + (self._start_offset + self._end_offset - self._ss) * 1000)
+                    )
+                    * self._fps
+                    / 1000
                 )
-                * self._fps
-                / 1000
-            ) + 1
+                + 1
+            )
 
             print("Rescaling MuseScore pages...", end="\r", file=sys.stderr)
             if self._resize_method == "rescale":

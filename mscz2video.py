@@ -201,8 +201,14 @@ else:
     ffmpeg_arg_ext = []
 
 converter = convert_core.Converter(
-    cache_limit=args.cache_limit,
     use_torch=args.use_torch,
+    ffmpeg_path=args.ffmpeg_path,
+    musescore_path=args.musescore_path,
+)
+converter.load_score(args.input_mscz, use_svg=args.use_svg)
+converter.convert(
+    args.output_video,
+    cache_limit=args.cache_limit,
     torch_devices=args.torch_devices,
     smooth_cursor=args.smooth_cursor,
     size=args.size,
@@ -213,15 +219,8 @@ converter = convert_core.Converter(
     start_offset=args.start_offset,
     end_offset=args.end_offset,
     ss=args.ss,
-    ffmpeg_path=args.ffmpeg_path,
-    musescore_path=args.musescore_path,
-    use_svg=args.use_svg,
     jobs=args.jobs,
     resize_method=args.resize_function,
-)
-converter.load_score(args.input_mscz)
-converter.convert(
-    args.output_video,
     fps=args.fps,
     t=args.t,
     ffmpeg_arg_ext=ffmpeg_arg_ext,
