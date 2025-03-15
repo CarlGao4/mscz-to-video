@@ -60,6 +60,32 @@ import webcolors
 
 import convert_core
 
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS") and sys.platform == "win32":
+    # Popen should be wrapped to avoid WinError 50
+    subprocess._Popen = subprocess.Popen
+
+    class wrapped_Popen(subprocess._Popen):
+        def __init__(self, *args, **kwargs):
+            if "stdout" in kwargs and kwargs["stdout"] is not None:
+                if "stderr" not in kwargs or kwargs["stderr"] is None:
+                    kwargs["stderr"] = subprocess.PIPE
+                if "stdin" not in kwargs or kwargs["stdin"] is None:
+                    kwargs["stdin"] = subprocess.PIPE
+            if "stderr" in kwargs and kwargs["stderr"] is not None:
+                if "stdout" not in kwargs or kwargs["stdout"] is None:
+                    kwargs["stdout"] = subprocess.PIPE
+                if "stdin" not in kwargs or kwargs["stdin"] is None:
+                    kwargs["stdin"] = subprocess.PIPE
+            if "stdin" in kwargs and kwargs["stdin"] is not None:
+                if "stdout" not in kwargs or kwargs["stdout"] is None:
+                    kwargs["stdout"] = subprocess.PIPE
+                if "stderr" not in kwargs or kwargs["stderr"] is None:
+                    kwargs["stderr"] = subprocess.PIPE
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+            super().__init__(*args, **kwargs)
+
+    subprocess.Popen = wrapped_Popen
+
 
 def thread_wrapper(*args_thread, no_log=False, **kw_thread):
     if "target" in kw_thread:
