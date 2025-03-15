@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QSizePolicy,
     QSpinBox,
+    QStyleFactory,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -121,6 +122,8 @@ class VirtualTerminal:
         self.send_to_stderr = send_to_stderr
 
     def write(self, data):
+        if self.closed:
+            raise ValueError("I/O operation on closed file.")
         if self.send_to_stderr:
             sys.__stderr__.write(data)
         len_before = len(self.data_buffer)
@@ -170,6 +173,8 @@ class VirtualTerminal:
         return len(self.data_buffer) - len_before
 
     def flush(self):
+        if self.closed:
+            raise ValueError("I/O operation on closed file.")
         if self.send_to_stderr:
             sys.__stderr__.flush()
         try:
@@ -201,7 +206,7 @@ class MainWindow(QWidget):
         super().__init__()
         self._execInMainThreadSignal.connect(self._exec_in_main_thread_executor)
         self.setWindowTitle("mscz-to-video")
-        self.setWindowIcon(QtGui.QIcon("icon/icon.ico"))
+        self.setWindowIcon(QtGui.QIcon(str(pathlib.Path(__file__).parent / "icon/icon.ico")))
 
         self.preview_lock = threading.Lock()
         self.update_preview_event = threading.Event()
@@ -243,7 +248,7 @@ class MainWindow(QWidget):
         self.log_text.setFixedHeight(100)
         self.log_text.keyPressEvent = lambda e: None
         self.log_text.inputMethodEvent = lambda e: None
-        self.log_text.setFontFamily("Consolas")
+        self.log_text.setFontFamily("Consolas" if sys.platform == "win32" else "Courier")
         self.log = ""
 
         self.stop_button_frame = QWidget(self)
@@ -372,7 +377,7 @@ class MainWindow(QWidget):
         self.bar_color_label_container.setStyleSheet("background-color: #FFFFFFFF;")
         self.bar_color_label = QLabel(" Bar color & alpha: ", self)
         self.bar_color_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.bar_color_label.setStyleSheet("background-color: #55FF0000; color: black;")
+        self.bar_color_label.setStyleSheet("background-color: #55FF0000; color: black; padding: 3px;")
         self.bar_color = QPushButton("Choose color", self)
         self.bar_color.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.bar_color.clicked.connect(lambda: self.update_bar_color(True))
@@ -388,7 +393,7 @@ class MainWindow(QWidget):
         self.note_color_label_container.setStyleSheet("background-color: #FFFFFFFF;")
         self.note_color_label = QLabel(" Note color & alpha: ", self)
         self.note_color_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        self.note_color_label.setStyleSheet("background-color: #5500FFFF; color: black;")
+        self.note_color_label.setStyleSheet("background-color: #5500FFFF; color: black; padding: 3px;")
         self.note_color = QPushButton("Choose color", self)
         self.note_color.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.note_color.clicked.connect(lambda: self.update_note_color(True))
@@ -687,8 +692,8 @@ class MainWindow(QWidget):
 
         devices = {"cpu": [f"{psutil.virtual_memory().total // 1048576} MB", platform.processor()]}
         if sys.platform == "darwin":
-            if torch.mps.is_built() and torch.mps.is_available():
-                devices["mps"] = [f"{psutil.virtual_memory().total // 1048576} MB", ""]
+            if torch.backends.mps.is_built() and torch.backends.mps.is_available():
+                devices["mps"] = [f"{psutil.virtual_memory().total // 1048576} MB", "Metal Performance Shaders"]
         else:
             if torch.cuda.is_available():
                 for i in range(torch.cuda.device_count()):
@@ -750,7 +755,7 @@ class MainWindow(QWidget):
             if new_color.isValid():
                 color = new_color.name(QtGui.QColor.NameFormat.HexRgb)[1:]
         self.bar_color_label.setStyleSheet(
-            f"background-color: #{self.bar_alpha.value():02X}{color}; color: black; padding: 5px;"
+            f"background-color: #{self.bar_alpha.value():02X}{color}; color: black; padding: 3px;"
         )
 
     def update_note_color(self, ask_color=False):
@@ -760,10 +765,10 @@ class MainWindow(QWidget):
             if new_color.isValid():
                 color = new_color.name(QtGui.QColor.NameFormat.HexRgb)[1:]
         self.note_color_label.setStyleSheet(
-            f"background-color: #{self.note_alpha.value():02X}{color}; color: black; padding: 5px;"
+            f"background-color: #{self.note_alpha.value():02X}{color}; color: black; padding: 3px;"
         )
 
-    @thread_wrapper(daemon=True, no_log=True)
+    @thread_wrapper(daemon=True)
     def show_preview(self):
         while True:
             if self.stop:
@@ -820,6 +825,7 @@ class MainWindow(QWidget):
 
     def closeEvent(self, event):
         self.stop = True
+        sys.stderr.close()
         sys.stderr = sys.__stderr__
         return super().closeEvent(event)
 
@@ -900,7 +906,7 @@ class MainWindow(QWidget):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.ipc_collect()
-            if "ipex" in sys.modules:
+            if "intel_extension_for_pytorch" in sys.modules:
                 ipex.xpu.empty_cache()
         finally:
             self.exec_in_main(lambda: self.controls_frame.setDisabled(False))
@@ -962,18 +968,25 @@ class MainWindow(QWidget):
     def search_binaries(self):
         self.musescore_path = self.search_musescore()
         self.ffmpeg_path = self.search_ffmpeg()
-        print("Found musescore at", self.musescore_path, file=sys.stderr)
-        print(
-            "MuseScore version:",
-            subprocess.Popen([self.musescore_path, "--version"], stdout=subprocess.PIPE).communicate()[0].decode(),
-            file=sys.stderr,
-        )
-        print("Found ffmpeg at", self.ffmpeg_path, file=sys.stderr)
-        print(
-            "ffmpeg version:\n"
-            + subprocess.Popen([self.ffmpeg_path, "-version"], stdout=subprocess.PIPE).communicate()[0].decode(),
-            file=sys.stderr,
-        )
+        try:
+            print("Found musescore at", self.musescore_path, file=sys.stderr)
+            print(
+                "MuseScore version:",
+                subprocess.Popen([self.musescore_path, "--version"], stdout=subprocess.PIPE).communicate()[0].decode(),
+                file=sys.stderr,
+            )
+            print("Found ffmpeg at", self.ffmpeg_path, file=sys.stderr)
+            print(
+                "ffmpeg version:\n"
+                + subprocess.Popen([self.ffmpeg_path, "-version"], stdout=subprocess.PIPE).communicate()[0].decode(),
+                file=sys.stderr,
+            )
+        except Exception:
+            self.exec_in_main(
+                lambda: QMessageBox.critical(self, "Error", "Failed to run MuseScore or ffmpeg. Please check the path.")
+            )
+            self.exec_in_main(lambda: self.close())
+            raise FileNotFoundError("MuseScore or ffmpeg not found")
         self.converter = convert_core.Converter(
             use_torch=True, ffmpeg_path=self.ffmpeg_path, musescore_path=self.musescore_path
         )
@@ -985,6 +998,9 @@ class MainWindow(QWidget):
             elif pathlib.Path("C:\\Program Files\\MuseScore 3\\bin\\MuseScore3.exe").exists():
                 return "C:\\Program Files\\MuseScore 3\\bin\\MuseScore3.exe"
         else:
+            if sys.platform == "darwin":
+                os.environ["PATH"] = "/Applications/MuseScore 4.app/Contents/MacOS" + os.pathsep + os.environ["PATH"]
+                os.environ["PATH"] = "/Applications/MuseScore 3.app/Contents/MacOS" + os.pathsep + os.environ["PATH"]
             if p := shutil.which("mscore"):
                 return p
             elif p := shutil.which("musescore"):
@@ -993,36 +1009,50 @@ class MainWindow(QWidget):
                 return p
             elif p := shutil.which("mscore-portable"):
                 return p
-        asked_path = QFileDialog.getOpenFileName(
-            self,
-            "Select MuseScore executable",
-            "",
-            (
-                "MuseScore executable(MuseScore4.exe MuseScore3.exe);;All files(*)"
-                if sys.platform == "win32"
-                else "MuseScore executable(mscore musescore mscore-portable mscore4portable);;All files(*)"
-            ),
+        asked_path = self.exec_in_main(
+            lambda: QFileDialog.getOpenFileName(
+                self,
+                "Select MuseScore executable",
+                "",
+                (
+                    "MuseScore executable(MuseScore4.exe MuseScore3.exe);;All files(*)"
+                    if sys.platform == "win32"
+                    else "MuseScore executable(mscore musescore mscore-portable mscore4portable);;All files(*)"
+                ),
+            )
         )[0]
         if not asked_path:
-            QMessageBox.critical(self, "Error", "MuseScore executable not found. Please install MuseScore.")
-            sys.exit(1)
+            self.exec_in_main(
+                lambda: QMessageBox.critical(self, "Error", "MuseScore executable not found. Please install MuseScore.")
+            )
+            self.exec_in_main(lambda: self.close())
+            raise FileNotFoundError("MuseScore executable not found")
+        return asked_path
 
     def search_ffmpeg(self):
         os.environ["PATH"] = str(pathlib.Path(__file__).parent / "ffmpeg") + os.pathsep + os.environ["PATH"]
         if p := shutil.which("ffmpeg"):
             return p
-        asked_path = QFileDialog.getOpenFileName(
-            self,
-            "Select ffmpeg executable",
-            "",
-            "ffmpeg executable(ffmpeg);;All files(*)",
+        asked_path = self.exec_in_main(
+            lambda: QFileDialog.getOpenFileName(
+                self,
+                "Select ffmpeg executable",
+                "",
+                "ffmpeg executable(ffmpeg);;All files(*)",
+            )
         )[0]
         if not asked_path:
-            QMessageBox.critical(self, "Error", "ffmpeg executable not found. Please install ffmpeg.")
-            sys.exit(1)
+            self.exec_in_main(
+                lambda: QMessageBox.critical(self, "Error", "ffmpeg executable not found. Please install ffmpeg.")
+            )
+            self.exec_in_main(lambda: self.close())
+            raise FileNotFoundError("ffmpeg executable not found")
+        return asked_path
 
 
 app = QApplication([])
+if app.style().name().lower() == "windows11":
+    app.setStyle(QStyleFactory.create("windowsvista"))
 window = MainWindow()
 window.show()
 app.exec()
