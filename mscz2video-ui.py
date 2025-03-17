@@ -336,6 +336,7 @@ class MainWindow(QWidget):
         else:
             self.video_encoder.addItem("h264_videotoolbox")
             self.video_encoder.addItem("hevc_videotoolbox")
+            self.video_encoder.addItem("prores_videotoolbox")
         self.video_encoder.addItem("libvpx-vp9")
         self.video_encoder.addItem("libaom-av1")
         self.video_encoder.addItem("libsvtav1")

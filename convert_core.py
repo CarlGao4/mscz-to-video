@@ -525,16 +525,12 @@ class Converter:
         if not smooth_cursor:
             note_box = (note["x"], note["y"], note["x"] + note["width"], note["y"] + note["height"])
         else:
-            next_note = self._note_pos[self._notes[note_idx + 1][1]] if note_idx + 1 < len(self._notes) else note
-            next_page = next_note["page"]
-            next_bar_idx = (
-                (bisect.bisect_right(self._bars, self._notes[note_idx + 1][0], key=lambda x: x[0]) - 1)
-                if note_idx + 1 < len(self._notes)
-                else bar_idx
-            )
-            if page != next_page or note_idx + 1 >= len(self._notes):
+            if note_idx + 1 >= len(self._notes):
                 note_box = (note["x"], note["y"], note["x"] + note["width"], note["y"] + note["height"])
             else:
+                next_note = self._note_pos[self._notes[note_idx + 1][1]]
+                next_page = next_note["page"]
+                next_bar_idx = bisect.bisect_right(self._bars, self._notes[note_idx + 1][0], key=lambda x: x[0]) - 1
                 note_box_current = (note["x"], note["y"], note["x"] + note["width"], note["y"] + note["height"])
                 note_box_next = (
                     next_note["x"],
@@ -543,22 +539,30 @@ class Converter:
                     next_note["y"] + next_note["height"],
                 )
                 if (
-                    note_box_next[1] >= note_box_current[3]
+                    page != next_page
+                    or note_box_next[1] >= note_box_current[3]
                     or note_box_next[2] <= note_box_current[0]
                     or note_box_next[3] <= note_box_current[1]
                     or not (self._bars[bar_idx][1] <= self._bars[next_bar_idx][1] <= self._bars[bar_idx][1] + 1)
                 ):
-                    note_box = note_box_current
-                else:
-                    current_note_time = self._notes[note_idx][0]
-                    next_note_time = self._notes[note_idx + 1][0]
-                    note_box = tuple(
-                        int(
-                            (note_box_current[i] * (next_note_time - t) + note_box_next[i] * (t - current_note_time))
-                            / (next_note_time - current_note_time)
-                        )
-                        for i in range(4)
+                    note_box_next = (
+                        note["x"] + bar_box[2] - note_box_current[2],
+                        note["y"],
+                        bar_box[2],
+                        note["y"] + note["height"],
                     )
+                current_note_time = self._notes[note_idx][0]
+                next_note_time = self._notes[note_idx + 1][0]
+                note_box = tuple(
+                    int(
+                        (
+                            note_box_current[i] * (next_note_time - t)
+                            + note_box_next[i] * (t - current_note_time)
+                        )
+                        / (next_note_time - current_note_time)
+                    )
+                    for i in range(4)
+                )
         return bar_box, note_box
 
     def convert(
