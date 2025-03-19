@@ -21,6 +21,7 @@ import collections
 import io
 import json
 import numpy as np
+import packaging.version
 import pathlib
 import PIL.Image
 import PIL.ImageFile
@@ -230,8 +231,14 @@ class Converter:
                     device: torch.device,
                     bar_color: torch.Tensor,
                     note_color: torch.Tensor,
+                    fallback_cpu: bool = False,
                 ) -> torch.Tensor:
-                    img, box = _resize_torch(img, *out_size, *note_box, "xpu" in device.type)
+                    img, box = _resize_torch(
+                        img,
+                        *out_size,
+                        *note_box,
+                        fallback_cpu=fallback_cpu,
+                    )
                     overlay = torch.zeros_like(img, dtype=torch.float16, device=device)
                     bar_box_offseted = (
                         max(bar_box[0] - box[0], 0),
@@ -491,6 +498,9 @@ class Converter:
                         dtype=torch.float16,
                         device=device,
                     ),
+                    "cpu" not in device.type
+                    and "cuda" not in device.type
+                    and packaging.version.Version(torch.__version__) < packaging.version.Version("2.5"),
                 )
                 .numpy()
                 .tobytes()
@@ -555,10 +565,7 @@ class Converter:
                 next_note_time = self._notes[note_idx + 1][0]
                 note_box = tuple(
                     int(
-                        (
-                            note_box_current[i] * (next_note_time - t)
-                            + note_box_next[i] * (t - current_note_time)
-                        )
+                        (note_box_current[i] * (next_note_time - t) + note_box_next[i] * (t - current_note_time))
                         / (next_note_time - current_note_time)
                     )
                     for i in range(4)
@@ -853,6 +860,7 @@ class Converter:
 
     def _ffmpeg_output_thread(self):
         ffmpeg_output = b""
+        just_newline = False
         while True:
             if self._stop:
                 break
@@ -860,15 +868,24 @@ class Converter:
             if not o:
                 break
             if o == b"\r":
+                just_newline = False
                 if ffmpeg_output.startswith(b"frame=") and not b"Lsize=" in ffmpeg_output:
                     self._ffmpeg_status = ffmpeg_output
                 else:
                     sys.stderr.buffer.write(ffmpeg_output + b"\n")
                     sys.stderr.buffer.flush()
+                    just_newline = True
                 ffmpeg_output = b""
-            elif o == b"\n":
-                pass
+            elif o == b"\n" and (ffmpeg_output and ffmpeg_output[-1] < 128 or not ffmpeg_output):
+                if just_newline:
+                    just_newline = False
+                else:
+                    ffmpeg_output += b"\n"
+                    sys.stderr.buffer.write(ffmpeg_output)
+                    sys.stderr.buffer.flush()
+                    ffmpeg_output = b""
             else:
+                just_newline = False
                 ffmpeg_output += o
         if ffmpeg_output:
             sys.stderr.buffer.write(ffmpeg_output + b"\n")
@@ -877,8 +894,7 @@ class Converter:
     def _print_thread(self):
         while True:
             self._update_status.wait(1)
-            print(self._program_status, end=" ", file=sys.stderr, flush=True)
-            sys.stderr.buffer.write(self._ffmpeg_status + b"     \r")
+            sys.stderr.buffer.write(self._program_status.encode("utf-8") + b" " + self._ffmpeg_status + b"     \r")
             sys.stderr.buffer.flush()
             self._update_status.clear()
             if self._stop:
