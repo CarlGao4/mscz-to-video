@@ -45,11 +45,24 @@ If you want to accelerate with Intel GPU, you can install [`intel_extension_for_
 
 ## UI Usage
 
-1. Download the binaries from the [release page](https://github.com/CarlGao4/mscz-to-video/releases) according to your platform.
-   1. For Windows, if you have Intel integrated GPU (Core 11th Gen or later), Intel or Nvidia discrete GPU, download `mscz2video_xxx_cuda_mkl.7z` and extract it. If you do not have GPUs matching the above, download `mscz2video_xxx_cpu.7z` and extract it. Both versions can use GPU accelerated encoding, but only the former can use GPU accelerated rendering.
-   2. For macOS, download `mscz2video_xxx_macOS_[ARCH].dmg` and open it. Drag the app to the Applications folder. `[ARCH]` is the architecture of your Mac, which can be `arm64` or `x86_64`. Apple Developer is expensive so I can't sign the app, so if the app is blocked by macOS, you can refer to [Note for macOS users](#CannotOpen) below.
+**Latest version only. For older versions, please see release note of each version.**
+
+1. Download the binaries from the [release page](https://github.com/CarlGao4/mscz-to-video/releases/latest) according to your platform.
+   - Windows
+      1. Download `mscz2video_[version].7z` and extract it first.
+      2. As I've built for Nvidia GPU acceleration and Intel GPU acceleration, you need to choose your torch runtime version according to your hardware.
+         - If you have Nvidia graphics card whose compute capability is greater or equal to 3.5, you can choose the cuda version `cu118`.
+         - For Intel graphic card, building a single binary is too large so I've splited it into 4 versions. If you have Core 11~14th generation CPU with integrated GPU or DG1 discrete GPU, you can choose `mkl.gen12lp`.
+         - For Intel Arc Alchemist GPU (Arc Axxx) and Ponte Vecchio GPU (Datacenter GPU Max), you can choose `mkl.xe-hpg.xe-hpc.xe-hpc-vg`.
+         - For Lunar Lake CPU (Intel Core Ultra 2xxV) and Battlemage GPU (Intel Arc Bxxx), you can choose `mkl.xe2`.
+         - For Core Ultra series but using Raptor Lake Refresh Architectures (`100U` `120U` `150U` `220U` `250U` `210H` `220H` `240H` `250H` `270H`), they use old GPU architecture so you can choose `mkl.gen12lp`.
+         - For other Intel Core Ultra Series 1 and 2 GPUs, please choose `mkl.xe-lpg.xe-lpgplus`.
+         - If you do not have GPUs above or do not want to use GPU acceleration, you can choose the CPU version. **Both versions can use GPU accelerated encoding, but only the GPU version can accelerate rendering. If you've not installed the latest Intel graphics driver but installed the Intel GPU runtime, start up of the program will fail. Please install the latest Intel graphics driver first.**
+      3. Extract the torch runtime into the application. `mscz2video.exe` should be in the same directory as `torch` folder.
+   - macOS
+      1. Download `mscz2video_xxx_macOS_[ARCH].dmg` and open it. Drag the app to the Applications folder. `[ARCH]` is the architecture of your Mac, which can be `arm64` or `x86_64`. Apple Developer is expensive so I can't sign the app, so if the app is blocked by macOS, you can refer to [Note for macOS users](#CannotOpen) below.
 2. Create a MuseScore file and format it to fit your video, or use the provided example file `Flower Dance.mscz` (Requires MuseScore 4.4 or later). If you don't want your video to scroll, you need to set your page ratio same as your video resolution. You can do this by going to `Format` → `Page Settings` → `Page Size` → `Custom` → `Width` and `Height` to your desired ratio. Please do not change them too small as the default output size is 330 dpi (pixels per inch, wich means that 1 inch is 330 pixels). You can also change `Staff space` and add new lines to make each page shows better. Personally, I'd also recommend setting `Format` → `Style` → `Header & Footer` to make odd/even pages have the same header and footer.
-3. Open the program (On Windows, you can just double-click `mscz2video.exe`). If supported Intel GPU is detected and you've downloaded the mkl version, and AOT is not enabled, a popup dialog will appear to ask you to download the AOT version. For more information, you can refer to [AOT docs](MKL-AOT.md).
+3. Open the program (On Windows, you can just double-click `mscz2video.exe`).
 4. Wait for the program to start up. Before the process is done, you can't load a mscz file. During start up, the program will search for MuseScore and FFmpeg. I've packed ffmpeg along with the program so you don't need to download it, but you need to download MuseScore yourself. The program will search for `C:\Program Files\MuseScore 4\bin\MuseScore4.exe` and `C:\Program Files\MuseScore 3\bin\MuseScore3.exe` on Windows, and `/Applications/MuseScore 4.app/Contents/MacOS/mscore` and `/Applications/MuseScore 3.app/Contents/MacOS/mscore` on macOS. If the program fails to find MuseScore, a dialog will pop up to ask you to set the path to MuseScore manually, just choose the correct path to MuseScore executable. On macOS, you need to enter the application package and find the executable in the `Contents/MacOS` folder. To open an application package, you need to press <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd> in Finder and enter the path.
 5. Load the mscz file by clicking `Load MuseScore file` or dragging the file to the button. Before the file is loaded, you can't start rendering. During this time you can change other settings.
     1. **Video settings**: You can set the resolution and framerate of the video. The default resolution is 1920x1080 and the default framerate is 60fps. Other common resolutions are: `1280x720` (720p), `1920x1080` (1080p), `2560x1440` (1440p or 2K), `3840x2160` (4K), `7680x4320` (8K).
@@ -69,19 +82,19 @@ If you want to accelerate with Intel GPU, you can install [`intel_extension_for_
 <details id="CannotOpen">
   <summary>Note for macOS users</summary>
 
-If the application cannot be launched due to the Mac's security protection feature, try the following:
-
-For macOS versions below 15.0:
-
-1. Right-click on the mscz2video app icon and select "Open".
-2. Click "Open" again in the window that appears as follows.
-
-For macOS versions 15.0 or greater:
-1. On your Mac, go to System Settings > Privacy & Security > Scroll to the Security section.
-2. If you see a message stating "'mscz2video.app' was blocked to protect your Mac." - to the right of this message, click "Open Anyway".
-3. Enter your login password, then click OK. This will create an override in Gatekeeper, allowing mscz2video to run.
-
-Similar steps with screenshots can be found on my other project [Demucs-GUI](https://github.com/CarlGao4/Demucs-GUI#CannotOpen).
+> If the application cannot be launched due to the Mac's security protection feature, try the following:
+> 
+> For macOS versions below 15.0:
+> 
+> 1. Right-click on the mscz2video app icon and select "Open".
+> 2. Click "Open" again in the window that appears as follows.
+> 
+> For macOS versions 15.0 or greater:
+> 1. On your Mac, go to System Settings > Privacy & Security > Scroll to the Security section.
+> 2. If you see a message stating "'mscz2video.app' was blocked to protect your Mac." - to the right of this message, click "Open Anyway".
+> 3. Enter your login password, then click OK. This will create an override in Gatekeeper, allowing mscz2video to run.
+> 
+> Similar steps with screenshots can be found on my other project [Demucs-GUI](https://github.com/CarlGao4/Demucs-GUI#CannotOpen).
 
 </details>
 
