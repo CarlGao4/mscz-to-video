@@ -300,7 +300,7 @@ class Converter:
         # Convert svg to png
         self._pngs: list[np.ndarray] = []
         if self._use_svg:
-            import cairosvg
+            import cairosvg  # type: ignore[import]
 
             for page in data["svgs"]:
                 print(f"Converting svg to png... {len(self._pngs)} / {len(data['svgs'])}", end="\r", file=sys.stderr)
@@ -613,8 +613,10 @@ class Converter:
             if self._use_torch:
                 global _resize_torch
                 self._torch_devices = {}
-                if "xpu" in torch_devices:
-                    import intel_extension_for_pytorch as ipex
+                if "xpu" in torch_devices and packaging.version.Version(torch.__version__) < packaging.version.Version(
+                    "2.2"
+                ):
+                    import intel_extension_for_pytorch as ipex  # type: ignore[import]
                 for device in torch_devices.split(";"):
                     if "," in device:
                         device, max_jobs = device.split(",")

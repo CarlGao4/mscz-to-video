@@ -22,6 +22,7 @@ import functools
 import logging
 import numpy as np
 import os
+import packaging.version
 import pathlib
 import platform
 import psutil
@@ -276,6 +277,16 @@ class MainWindow(QWidget):
         self.log_text.keyPressEvent = lambda e: None
         self.log_text.inputMethodEvent = lambda e: None
         self.log_text.setFontFamily("Consolas" if sys.platform == "win32" else "Courier")
+
+        def show_context_menu(pos):
+            menu = self.log_text.createStandardContextMenu()
+            menu.addSeparator()
+            copy_all_action = menu.addAction("Copy All")
+            copy_all_action.triggered.connect(lambda: QApplication.clipboard().setText(self.log_text.toPlainText()))
+            menu.exec(self.log_text.mapToGlobal(pos))
+
+        self.log_text.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.log_text.customContextMenuRequested.connect(show_context_menu)
         self.log = ""
 
         self.stop_button_frame = QWidget(self)
@@ -716,7 +727,18 @@ class MainWindow(QWidget):
     @thread_wrapper(daemon=True)
     def search_devices(self):
         global torch, ipex
-        import torch
+        try:
+            import torch
+        except ImportError:
+            self.exec_in_main(
+                lambda: QMessageBox.critical(
+                    self,
+                    "Torch not found",
+                    "Torch not found. Did you extracted the torch runtime files correctly?",
+                    QMessageBox.StandardButton.Ok,
+                )
+            )
+            self.exec_in_main(self.close)
 
         devices = {"cpu": [f"{psutil.virtual_memory().total // 1048576} MB", platform.processor()]}
         if sys.platform == "darwin":
@@ -731,14 +753,16 @@ class MainWindow(QWidget):
                     ]
                     print("Found CUDA device", i, ":", torch.cuda.get_device_properties(i), file=sys.stderr)
             try:
-                import intel_extension_for_pytorch as ipex
+                if packaging.version.Version(torch.__version__) < packaging.version.Version("2.2.0"):
+                    import intel_extension_for_pytorch as ipex  # type: ignore[import]
 
-                for i in range(ipex.xpu.device_count()):
-                    devices[f"xpu:{i}"] = [
-                        f"ipex {ipex.xpu.get_device_properties(i).total_memory // 1048576} MB",
-                        ipex.xpu.get_device_name(i),
-                    ]
-                    print("Found IPEX device", i, ":", ipex.xpu.get_device_properties(i), file=sys.stderr)
+                if hasattr(torch, "xpu") and torch.xpu.is_available():
+                    for i in range(torch.xpu.device_count()):
+                        devices[f"xpu:{i}"] = [
+                            f"ipex {torch.xpu.get_device_properties(i).total_memory // 1048576} MB",
+                            torch.xpu.get_device_name(i),
+                        ]
+                        print("Found IPEX device", i, ":", torch.xpu.get_device_properties(i), file=sys.stderr)
             except ImportError:
                 pass
         self.exec_in_main(lambda: self.add_devices(devices))
@@ -877,6 +901,8 @@ class MainWindow(QWidget):
     def show_preview(self):
         while True:
             if self.stop:
+                self.exec_in_main(lambda: self.preview_window.setPixmap(QtGui.QPixmap()))
+                self.exec_in_main(lambda: self.preview_window.setText("Start rendering to show preview"))
                 return
             self.update_preview_event.wait(1)
             self.update_preview_event.clear()
@@ -1011,9 +1037,10 @@ class MainWindow(QWidget):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.ipc_collect()
-            if "intel_extension_for_pytorch" in sys.modules:
-                ipex.xpu.empty_cache()
+            if hasattr(torch, "xpu") and hasattr(torch.xpu, "empty_cache"):
+                torch.xpu.empty_cache()
         finally:
+            self.stop = True
             self.exec_in_main(lambda: self.controls_frame.setDisabled(False))
             self.exec_in_main(lambda: self.files_frame.setDisabled(False))
             self.exec_in_main(lambda: self.render_button.setDisabled(True))
