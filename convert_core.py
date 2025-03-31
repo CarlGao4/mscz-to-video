@@ -122,7 +122,7 @@ class Converter:
                                 .permute(0, 2, 3, 1)
                                 .squeeze(0)
                                 .clamp(0, 1)
-                                .to(torch.float16)
+                                .to(torch.float16 if "xpu" not in img.device.type else torch.float32)
                             )
                         else:
                             img = (
@@ -136,7 +136,7 @@ class Converter:
                                 .permute(0, 2, 3, 1)
                                 .squeeze(0)
                                 .clamp(0, 1)
-                                .to(torch.float16)
+                                .to(torch.float16 if "xpu" not in img.device.type else torch.float32)
                             )
                         width, height = img.shape[1], img.shape[0]
                         x_center = (l + r) / 2 * rescale_ratio
@@ -155,19 +155,35 @@ class Converter:
                     else:
                         # Target ratio is wider than the image
                         rescale_ratio = w / width
-                        img = (
-                            torch.nn.functional.interpolate(
-                                img[None, ...].permute(0, 3, 1, 2).to(torch.float32),
-                                size=(int(height * rescale_ratio), w),
-                                mode="bicubic",
-                                align_corners=False,
-                                antialias=True,
+                        if fallback_cpu:
+                            img = (
+                                torch.nn.functional.interpolate(
+                                    img[None, ...].permute(0, 3, 1, 2).cpu().to(torch.float32),
+                                    size=(int(height * rescale_ratio), w),
+                                    mode="bicubic",
+                                    align_corners=False,
+                                    antialias=True,
+                                )
+                                .to(img.device)
+                                .permute(0, 2, 3, 1)
+                                .squeeze(0)
+                                .clamp(0, 1)
+                                .to(torch.float16 if "xpu" not in img.device.type else torch.float32)
                             )
-                            .permute(0, 2, 3, 1)
-                            .squeeze(0)
-                            .clamp(0, 1)
-                            .to(torch.float16)
-                        )
+                        else:
+                            img = (
+                                torch.nn.functional.interpolate(
+                                    img[None, ...].permute(0, 3, 1, 2).to(torch.float32),
+                                    size=(int(height * rescale_ratio), w),
+                                    mode="bicubic",
+                                    align_corners=False,
+                                    antialias=True,
+                                )
+                                .permute(0, 2, 3, 1)
+                                .squeeze(0)
+                                .clamp(0, 1)
+                                .to(torch.float16 if "xpu" not in img.device.type else torch.float32)
+                            )
                         width, height = img.shape[1], img.shape[0]
                         y_center = (t + b) / 2 * rescale_ratio
                         y_top = int(y_center - h / 2)
@@ -200,7 +216,7 @@ class Converter:
                             .permute(0, 2, 3, 1)
                             .squeeze(0)
                             .clamp(0, 1)
-                            .to(torch.float16),
+                            .to(torch.float16 if "xpu" not in img.device.type else torch.float32),
                             (0, 0, img.shape[1], img.shape[0]),
                         )
                     else:
@@ -215,8 +231,9 @@ class Converter:
                             .permute(0, 2, 3, 1)
                             .squeeze(0)
                             .clamp(0, 1)
-                            .to(torch.float16)
-                        ), (0, 0, img.shape[1], img.shape[0])
+                            .to(torch.float16 if "xpu" not in img.device.type else torch.float32),
+                            (0, 0, img.shape[1], img.shape[0]),
+                        )
 
             _resize_torch = _resize_and_crop_to_torch
 
@@ -239,7 +256,7 @@ class Converter:
                         *note_box,
                         fallback_cpu=fallback_cpu,
                     )
-                    overlay = torch.zeros_like(img, dtype=torch.float16, device=device)
+                    overlay = torch.zeros_like(img, dtype=img.dtype, device=device)
                     bar_box_offseted = (
                         max(bar_box[0] - box[0], 0),
                         max(bar_box[1] - box[1], 0),
@@ -266,8 +283,8 @@ class Converter:
                         min(bar_box_offseted[0], note_box_offseted[0]),
                         max(bar_box_offseted[2], note_box_offseted[2]),
                     )
-                    if overlay.any():
-                        overlay /= torch.tensor(255.0, dtype=torch.float16, device=device)
+                    if (overlay.any() if "xpu" not in device.type else overlay.cpu().any()).item():
+                        overlay /= torch.tensor(255.0, dtype=img.dtype, device=device)
                         overlay[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3] *= img[
                             overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3
                         ]
@@ -275,16 +292,18 @@ class Converter:
                             overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], 3, None
                         ]
                         img[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3] *= (
-                            torch.tensor(1.0, dtype=torch.float16, device=device)
+                            torch.tensor(1.0, dtype=img.dtype, device=device)
                             - overlay[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], 3, None]
                         )
                         img[overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3] += overlay[
                             overlay_area[0] : overlay_area[1], overlay_area[2] : overlay_area[3], :3
                         ]
-                        img[..., 3] = torch.tensor(1.0, dtype=torch.float16, device=device)
-                    return (
-                        (img[..., :3] * torch.tensor(255.0, dtype=torch.float16, device=device)).to(torch.uint8).cpu()
-                    )
+                        img[..., 3] = torch.tensor(1.0, dtype=img.dtype, device=device)
+                    if "xpu" in device.type:
+                        return (
+                            (img[..., :3] * torch.tensor(255.0, dtype=img.dtype, device=device)).cpu().to(torch.uint8)
+                        )
+                    return (img[..., :3] * torch.tensor(255.0, dtype=img.dtype, device=device)).to(torch.uint8).cpu()
 
     def load_score(self, input_mscz: pathlib.Path, use_svg: bool = False):
         self._use_svg = use_svg
@@ -490,12 +509,12 @@ class Converter:
                     device,
                     torch.tensor(
                         self._bar_color + (self._bar_alpha,),
-                        dtype=torch.float16,
+                        dtype=img.dtype,
                         device=device,
                     ),
                     torch.tensor(
                         self._note_color + (self._note_alpha,),
-                        dtype=torch.float16,
+                        dtype=img.dtype,
                         device=device,
                     ),
                     "cpu" not in device.type
@@ -779,10 +798,18 @@ class Converter:
             if self._use_torch:
                 if no_device_cache:
                     pngs_torch = [torch.from_numpy(png) for png in self._pngs]
-                    self._pngs = {device: pngs_torch for device in self._torch_devices}
+                    self._pngs = {
+                        device: (pngs_torch if "xpu" not in device else [png.to(torch.float32) for png in pngs_torch])
+                        for device in self._torch_devices
+                    }
                 else:
                     self._pngs = {
-                        device: [torch.from_numpy(png).to(self._torch_devices[device]["device"]) for png in self._pngs]
+                        device: [
+                            torch.from_numpy(png)
+                            .to(torch.float32 if "xpu" in device else torch.float16)
+                            .to(self._torch_devices[device]["device"])
+                            for png in self._pngs
+                        ]
                         for device in self._torch_devices
                     }
 
