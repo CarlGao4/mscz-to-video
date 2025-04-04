@@ -538,6 +538,37 @@ class MainWindow(QWidget):
         self.smooth_cursor.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.smooth_cursor.setToolTip("Smooth cursor movement")
         self.smooth_cursor.setChecked(True)
+        self.fixed_note_width_checkbox = QCheckBox("Fixed note width", self)
+        self.fixed_note_width_checkbox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.fixed_note_width_checkbox.setToolTip(
+            "Note highlight width will not be automatically adjusted to fit each note"
+        )
+        self.fixed_note_width_checkbox.setChecked(True)
+        self.fixed_note_width_label = QLabel("Fixed note width (0 means auto):", self)
+        self.fixed_note_width_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.fixed_note_width_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.fixed_note_width = QSpinBox(self)
+        self.fixed_note_width.setRange(0, 1000)
+        self.fixed_note_width.setValue(0)
+        self.fixed_note_width.setSingleStep(1)
+        self.fixed_note_width.setAccelerated(True)
+        self.fixed_note_width.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.fixed_note_width.setSuffix(" px")
+        self.fixed_note_width_label.setBuddy(self.fixed_note_width)
+        self.fixed_note_width_checkbox.toggled.connect(
+            lambda: self.fixed_note_width.setEnabled(self.fixed_note_width_checkbox.isChecked())
+        )
+        self.extra_note_width_ratio_label = QLabel("Extra note width ratio:", self)
+        self.extra_note_width_ratio_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.extra_note_width_ratio_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.extra_note_width_ratio = QSpinBox(self)
+        self.extra_note_width_ratio.setRange(0, 1000)
+        self.extra_note_width_ratio.setValue(40)
+        self.extra_note_width_ratio.setSingleStep(1)
+        self.extra_note_width_ratio.setAccelerated(True)
+        self.extra_note_width_ratio.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.extra_note_width_ratio.setSuffix(" %")
+        self.extra_note_width_ratio_label.setBuddy(self.extra_note_width_ratio)
         self.resize_function_label = QLabel("Resize function:", self)
         self.resize_function_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.resize_function_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -625,6 +656,15 @@ class MainWindow(QWidget):
         self.controls_layout.addLayout(self.cache_limit_layout)
         self.controls_layout.addWidget(self.use_device_cache)
         self.controls_layout.addWidget(self.smooth_cursor)
+        self.controls_layout.addWidget(self.fixed_note_width_checkbox)
+        self.fixed_note_width_layout = QHBoxLayout()
+        self.fixed_note_width_layout.addWidget(self.fixed_note_width_label)
+        self.fixed_note_width_layout.addWidget(self.fixed_note_width)
+        self.controls_layout.addLayout(self.fixed_note_width_layout)
+        self.extra_note_width_ratio_layout = QHBoxLayout()
+        self.extra_note_width_ratio_layout.addWidget(self.extra_note_width_ratio_label)
+        self.extra_note_width_ratio_layout.addWidget(self.extra_note_width_ratio)
+        self.controls_layout.addLayout(self.extra_note_width_ratio_layout)
         self.resize_function_layout = QHBoxLayout()
         self.resize_function_layout.addWidget(self.resize_function_label)
         self.resize_function_layout.addWidget(self.resize_crop)
@@ -887,7 +927,12 @@ class MainWindow(QWidget):
     def render(self):
         self.exec_in_main(lambda: self.render_button.setDisabled(True))
         output_path = self.exec_in_main(
-            lambda: QFileDialog.getSaveFileName(self, "Save video", "", "*.mp4;;*.mkv;;*.mov;;*.flv;;*.m4v")[0]
+            lambda: QFileDialog.getSaveFileName(
+                self,
+                "Save video",
+                str(pathlib.Path(self.current_mscz_label.text()).parent),
+                "*.mp4;;*.mkv;;*.mov;;*.flv;;*.m4v",
+            )[0]
         )
         if not output_path:
             self.exec_in_main(lambda: self.render_button.setDisabled(False))
@@ -928,6 +973,8 @@ class MainWindow(QWidget):
                 output_path,
                 cache_limit=self.cache_limit.value(),
                 smooth_cursor=self.smooth_cursor.isChecked(),
+                fixed_note_width=self.fixed_note_width.value() if self.fixed_note_width_checkbox.isChecked() else None,
+                extra_note_width_ratio=self.extra_note_width_ratio.value() / 100,
                 size=(self.size_x.value(), self.size_y.value()),
                 bar_color=webcolors.hex_to_rgb(
                     "#" + self.bar_color_label.styleSheet().split("background-color: #")[-1][2:8]

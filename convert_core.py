@@ -19,6 +19,7 @@ import base64
 import bisect
 import collections
 import io
+import itertools
 import json
 import numpy as np
 import packaging.version
@@ -29,10 +30,12 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import typing
 import xml.etree.ElementTree as ET
+import zipfile
 
-__version__ = "0.1"
+__version__ = "0.3"
 
 PIL.ImageFile.LOAD_TRUNCATED_IMAGES = True
 PIL.Image.MAX_IMAGE_PIXELS = None
@@ -306,6 +309,7 @@ class Converter:
                     return (img[..., :3] * torch.tensor(255.0, dtype=img.dtype, device=device)).to(torch.uint8).cpu()
 
     def load_score(self, input_mscz: pathlib.Path, use_svg: bool = False):
+        self._input_mscz = input_mscz
         self._use_svg = use_svg
         musescore = subprocess.Popen(
             [
@@ -596,6 +600,8 @@ class Converter:
         output_path: pathlib.Path,
         cache_limit: int = 100,
         smooth_cursor: bool = False,
+        fixed_note_width: typing.Optional[typing.Union[int, float]] = None,
+        extra_note_width_ratio: float = 0.0,
         size: typing.Optional[tuple[int, int]] = None,
         bar_alpha: int = 85,
         bar_color: tuple[int, int, int] = (255, 0, 0),
@@ -617,6 +623,8 @@ class Converter:
         with self._convert_lock:
             self._cache_limit = cache_limit
             self._smooth_cursor = smooth_cursor
+            self._fixed_note_width = fixed_note_width
+            self._extra_note_width_ratio = extra_note_width_ratio
             self._size = size
             self._bar_alpha = bar_alpha
             self._bar_color = bar_color
@@ -712,6 +720,7 @@ class Converter:
                 + 1
             )
 
+            print("Exported page size", tuple(reversed(self._pngs[0].shape[:2])), file=sys.stderr)
             print("Rescaling MuseScore pages...", end="\r", file=sys.stderr)
             if self._resize_method == "rescale":
                 self._highlight_ratio = (
@@ -780,6 +789,90 @@ class Converter:
                     "height": int(float(note.attrib["sy"]) / self._highlight_ratio[1]),
                     "page": int(note.attrib["page"]),
                 }
+            if self._fixed_note_width is not None:
+                if self._fixed_note_width == 0:
+                    print("Getting fixed note width because it is set to 0", file=sys.stderr)
+                    found_width = False
+                    # First try reading with xml, assuming input file is mscx
+                    try:
+                        with open(self._input_mscz, "rb") as f:
+                            decoded_mscx = ET.fromstring(f.read())
+                            # Just in case the mscx is not capitalized
+                            for spatium_text in (
+                                "".join(comb)
+                                for comb in itertools.product(*((char.lower(), char.upper()) for char in "spatium"))
+                            ):
+                                spatium_element = decoded_mscx.find(f".//{spatium_text}")
+                                if spatium_element is not None:
+                                    break
+                            if spatium_element is None:
+                                raise ValueError("Spatium element not found")
+                            self._fixed_note_width = float(spatium_element.text)  # Unit: mm
+                            found_width = True
+                    except ET.ParseError:
+                        pass
+                    except Exception:
+                        print("Error reading mscx file", file=sys.stderr)
+                        print(traceback.format_exc(), file=sys.stderr)
+                    if not found_width:
+                        # Now we assume the input file is mscz, unzip it and read the mscx file first
+                        with zipfile.ZipFile(self._input_mscz, "r") as zf:
+                            for name in zf.namelist():
+                                if name.lower().endswith(".mscx"):
+                                    with zf.open(name) as f:
+                                        try:
+                                            decoded_mscx = ET.fromstring(f.read())
+                                        except ET.ParseError:
+                                            continue
+                                        # Just in case the mscx is not capitalized
+                                        for spatium_text in (
+                                            "".join(comb)
+                                            for comb in itertools.product(
+                                                *((char.lower(), char.upper()) for char in "spatium"))
+                                        ):
+                                            spatium_element = decoded_mscx.find(f".//{spatium_text}")
+                                            if spatium_element is not None:
+                                                break
+                                        if spatium_element is None:
+                                            continue
+                                        self._fixed_note_width = float(spatium_element.text)  # Unit: mm
+                                        found_width = True
+                                        break
+                            for name in zf.namelist():
+                                if not found_width and name.lower().endswith(".mss"):  # For MuseScore Studio 4
+                                    with zf.open(name) as f:
+                                        try:
+                                            decoded_mscx = ET.fromstring(f.read())
+                                        except ET.ParseError:
+                                            continue
+                                        # Just in case the mscx is not capitalized
+                                        for spatium_text in (
+                                            "".join(comb)
+                                            for comb in itertools.product(
+                                                *((char.lower(), char.upper()) for char in "spatium"))
+                                        ):
+                                            spatium_element = decoded_mscx.find(f".//{spatium_text}")
+                                            if spatium_element is not None:
+                                                break
+                                        if spatium_element is None:
+                                            continue
+                                        self._fixed_note_width = float(spatium_element.text)  # Unit: mm
+                                        found_width = True
+                    if not found_width:
+                        print("Spatium element not found in input file. Using default value of 1.75", file=sys.stderr)
+                        self._fixed_note_width = 1.75
+                    else:
+                        print("Found spatium", self._fixed_note_width, file=sys.stderr)
+                    # Calc actual note width in pixels
+                    # 325 / 265 is ratio of single note head
+                    # 265 / 252 is ratio of note height to staff line space
+                    # 1.008 is ratio of note font size in MuseScore
+                    # 25.4 is mm to inch
+                    # 330 is default png dpi in MuseScore
+                    self._fixed_note_width *= 325 / 265 * 265 / 252 * 1.008 / 25.4 * 330 / self._highlight_ratio[0] * 10
+                for note in self._note_pos.values():
+                    note["x"] = int(note["x"] - self._fixed_note_width * self._extra_note_width_ratio / 2)
+                    note["width"] = int(self._fixed_note_width * (1 + self._extra_note_width_ratio))
             print("Bar count:", len(self._bars), file=sys.stderr)
             print("Note time count:", len(self._notes), file=sys.stderr)
 

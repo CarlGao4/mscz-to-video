@@ -192,6 +192,23 @@ parser.add_argument(
     help="Use SVG exported by MuseScore instead of PNG. May clearer and requires CairoSVG but may fail sometimes",
 )
 parser.add_argument("--smooth-cursor", action="store_true", dest="smooth_cursor", help="Smooth cursor movement")
+parser.add_argument(
+    "--fixed-note-width",
+    nargs="?",
+    type=float,
+    metavar="FLOAT",
+    dest="fixed_note_width",
+    const=0,
+    help="Fixed note width, default auto",
+)
+parser.add_argument(
+    "--extra-note-width-ratio",
+    type=float,
+    default=0.4,
+    dest="extra_note_width_ratio",
+    metavar="FLOAT",
+    help="Extra note highlight area width ratio, default 0.4, means will expand 20%% of target note on each side",
+)
 parser.add_argument("--version", action="version", version=f"%(prog)s {convert_core.__version__}")
 if "--" in sys.argv:
     args = parser.parse_args(sys.argv[1 : sys.argv.index("--")])
@@ -211,6 +228,8 @@ converter.convert(
     cache_limit=args.cache_limit,
     torch_devices=args.torch_devices,
     smooth_cursor=args.smooth_cursor,
+    fixed_note_width=args.fixed_note_width,
+    extra_note_width_ratio=args.extra_note_width_ratio,
     size=args.size,
     bar_color=args.bar_color,
     bar_alpha=args.bar_alpha,
@@ -225,5 +244,4 @@ converter.convert(
     t=args.t,
     ffmpeg_arg_ext=ffmpeg_arg_ext,
     no_device_cache=args.no_device_cache,
-    wait=True,
 )

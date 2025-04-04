@@ -110,8 +110,7 @@ If you want to accelerate with Intel GPU, you can install [`intel_extension_for_
 
 ## Command Line Arguments
 ```
-usage: mscz2video.py [-h] [-r FPS] [-s SIZE] [--bar-color COLOR] [--bar-alpha UINT8] [--note-color COLOR] [--note-alpha UINT8] [--ffmpeg-path PATH] [--musescore-path PATH] [--start-offset FLOAT] [--end-offset FLOAT] [-ss FLOAT] [-t FLOAT] [--ffmpeg-help] [-j UINT] [--cache-limit UINT] [--use-torch] [--torch-devices STR] [--no-device-cache] [--resize-function {crop,rescale}] [--use-svg] [--allow-large-picture] [--smooth-cursor] input_mscz output_video
-
+usage: mscz2video.py [-h] [-r FPS] [-s SIZE] [--bar-color COLOR] [--bar-alpha UINT8] [--note-color COLOR] [--note-alpha UINT8] [--ffmpeg-path PATH] [--musescore-path PATH] [--start-offset FLOAT] [--end-offset FLOAT] [-ss FLOAT] [-t FLOAT] [--ffmpeg-help] [-j UINT] [--cache-limit UINT] [--use-torch] [--torch-devices STR] [--no-device-cache] [--resize-function {crop,rescale}] [--use-svg] [--smooth-cursor] [--fixed-note-width [FLOAT]] [--extra-note-width-ratio FLOAT] [--version] input_mscz output_video
 Convert MuseScore files to video
 
 positional arguments:
@@ -140,6 +139,7 @@ options:
   --no-device-cache                Do not cache original images to every device. Load from memory every time. May slower but use less device memory.
   --resize-function {crop,rescale} Resize function to use, crop will crop each page to the largest possible size with the same ratio, rescale will resize each page to target size, default crop
   --use-svg                        Use SVG exported by MuseScore instead of PNG. May clearer and requires CairoSVG but may fail sometimes
-  --allow-large-picture            Allow reading large picture with PIL
+  --fixed-note-width [FLOAT]       Fixed note width, default auto
+  --extra-note-width-ratio FLOAT   Extra note highlight area width ratio, default 0.4, means will expand 20% of target note on each side
   --smooth-cursor                  Smooth cursor movement
 ```
