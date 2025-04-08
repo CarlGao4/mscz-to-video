@@ -19,6 +19,7 @@
 
 import collections
 import functools
+import json
 import logging
 import numpy as np
 import os
@@ -57,6 +58,7 @@ import sys
 import threading
 import time
 import traceback
+import urllib.request
 import webbrowser
 import webcolors
 
@@ -139,6 +141,25 @@ def thread_wrapper(*args_thread, no_log=False, **kw_thread):
         return wrapper
 
     return thread_func_wrapper
+
+
+update_url = "https://api.github.com/repos/CarlGao4/mscz-to-video/releases"
+
+
+@thread_wrapper(daemon=True)
+def check_update(callback):
+    try:
+        with urllib.request.urlopen(update_url) as f:
+            data = json.loads(f.read())[0]
+        logging.info("Latest version: %s" % data["tag_name"])
+        m = re.search(r"<!--\s*\[inapp-info\](.*)\s*-->", data["body"], re.DOTALL)
+        description = ""
+        if m:
+            description = m[1].strip()
+        callback(data["tag_name"], description)
+    except Exception:
+        logging.warning("Failed to check update: %s" % traceback.format_exc())
+        callback(None, traceback.format_exc())
 
 
 class VirtualTerminal:
@@ -233,7 +254,7 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self._execInMainThreadSignal.connect(self._exec_in_main_thread_executor)
-        self.setWindowTitle("mscz-to-video")
+        self.setWindowTitle("mscz-to-video %s" % convert_core.__version__)
         self.setWindowIcon(QtGui.QIcon(str(pathlib.Path(__file__).parent / "icon/icon.ico")))
 
         self.preview_lock = threading.Lock()
@@ -709,6 +730,7 @@ class MainWindow(QWidget):
         self.timer = QTimer(self)
         self.timer.singleShot(0, self.search_binaries)
         self.timer.singleShot(0, self.search_devices)
+        check_update(self.validate_update)
 
     def set_log(self, log):
         if self.log_text.isVisible():
@@ -763,6 +785,37 @@ class MainWindow(QWidget):
             self._execInMainThreadResult = e
             self._execInMainThreadSuccess = False
         self._execInMainThreadResultEvent.set()
+
+    def validate_update(self, new_version, description=""):
+        if new_version is None:
+            self.exec_in_main(
+                lambda: QMessageBox.warning(
+                    self, "Update check failed", "Failed to check for updates.\n%s" % description
+                )
+            )
+            return
+        version_new = packaging.version.Version(new_version)
+        version_current = packaging.version.Version(convert_core.__version__)
+        if version_new > version_current:
+            message = "A new version of mscz2video is available!\n"
+            if description:
+                message += f"\n{description}\n\n"
+            message += f"New version: {new_version}\n"
+            message += "Do you want to open browser to download it?"
+            if version_new.is_prerelease:
+                message += "\n\nNote: This is a pre-release version and may be unstable."
+            if (
+                self.exec_in_main(
+                    lambda: QMessageBox.question(
+                        self,
+                        "Update available",
+                        message,
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    )
+                )
+                == QMessageBox.StandardButton.Yes
+            ):
+                webbrowser.open("https://github.com/CarlGao4/mscz-to-video/releases/" + new_version)
 
     @thread_wrapper(daemon=True)
     def search_devices(self):
