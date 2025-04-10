@@ -344,10 +344,18 @@ class MainWindow(QWidget):
         self.audio_delay_label.setToolTip("Delay of audio will not be automatically adjusted according to start offset")
         self.audio_delay = QDoubleSpinBox(self)
         self.audio_delay.setRange(-1000, 1000)
-        self.audio_delay.setValue(0)
+        self.audio_delay.setValue(1)
         self.audio_delay.setSingleStep(0.01)
         self.audio_delay.setDecimals(2)
         self.audio_delay.setSuffix(" s")
+        self.audio_delay_link = QPushButton("🔗")
+        self.audio_delay_link.setCheckable(True)
+        self.audio_delay_link.setChecked(True)
+        self.audio_delay_link.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.audio_delay_link.setMaximumWidth(self.audio_delay_link.sizeHint().height())
+        self.audio_delay_link.setToolTip(
+            "With this enabled, audio delay will be automatically adjusted to start offset and start time"
+        )
         self.video_encoder_label = QLabel("Video encoder:", self)
         self.video_encoder_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.video_encoder_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -475,6 +483,7 @@ class MainWindow(QWidget):
         self.start_offset.setSuffix(" s")
         self.start_offset.setAccelerated(True)
         self.start_offset.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.start_offset.valueChanged.connect(self.update_audio_delay)
         self.end_offset_label = QLabel("End offset:", self)
         self.end_offset_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.end_offset_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -500,6 +509,7 @@ class MainWindow(QWidget):
         self.from_time.valueChanged.connect(
             lambda: self.from_time.setValue(float("inf")) if self.from_time.value() > 1e8 else None
         )
+        self.from_time.valueChanged.connect(self.update_audio_delay)
         self.total_time_label = QLabel("Total:", self)
         self.total_time_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.total_time_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -613,6 +623,7 @@ class MainWindow(QWidget):
         self.audio_delay_layout = QHBoxLayout()
         self.audio_delay_layout.addWidget(self.audio_delay_label)
         self.audio_delay_layout.addWidget(self.audio_delay)
+        self.audio_delay_layout.addWidget(self.audio_delay_link)
         self.files_layout.addLayout(self.audio_delay_layout)
         self.video_encoder_layout = QHBoxLayout()
         self.video_encoder_layout.addWidget(self.video_encoder_label)
@@ -816,6 +827,11 @@ class MainWindow(QWidget):
                 == QMessageBox.StandardButton.Yes
             ):
                 webbrowser.open("https://github.com/CarlGao4/mscz-to-video/releases/" + new_version)
+
+    def update_audio_delay(self, *_):
+        if not self.audio_delay_link.isChecked():
+            return
+        self.audio_delay.setValue(float(self.start_offset.value() - self.from_time.value()))
 
     @thread_wrapper(daemon=True)
     def search_devices(self):
