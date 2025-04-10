@@ -199,7 +199,9 @@ parser.add_argument(
     metavar="FLOAT",
     dest="fixed_note_width",
     const=0,
-    help="Fixed note width, default auto",
+    help="Without this argument, the width of note highlight rect will be adjusted to the width of note. "
+    "If this argument is used without value or with 0, the width of note highlight rect will be calculated "
+    "automatically, or the width of a quarter note",
 )
 parser.add_argument(
     "--extra-note-width-ratio",

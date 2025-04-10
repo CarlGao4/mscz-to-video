@@ -139,7 +139,7 @@ options:
   --no-device-cache                Do not cache original images to every device. Load from memory every time. May slower but use less device memory.
   --resize-function {crop,rescale} Resize function to use, crop will crop each page to the largest possible size with the same ratio, rescale will resize each page to target size, default crop
   --use-svg                        Use SVG exported by MuseScore instead of PNG. May clearer and requires CairoSVG but may fail sometimes
-  --fixed-note-width [FLOAT]       Fixed note width, default auto
+  --fixed-note-width [FLOAT]       Without this argument, the width of note highlight rect will be adjusted to the width of note. If this argument is used without value or with 0, the width of note highlight rect will be calculated automatically, or the width of a quarter note
   --extra-note-width-ratio FLOAT   Extra note highlight area width ratio, default 0.4, means will expand 20% of target note on each side
   --smooth-cursor                  Smooth cursor movement
 ```
