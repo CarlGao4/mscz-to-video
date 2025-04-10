@@ -885,7 +885,7 @@ class MainWindow(QWidget):
             self.device_labels.append(label)
             jobs = QSpinBox(self)
             jobs.setRange(0, 100)
-            jobs.setValue(1)
+            jobs.setValue(0 if len(devices) > 1 and device == "cpu" else 1)
             jobs.setSingleStep(1)
             jobs.setAccelerated(True)
             jobs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
