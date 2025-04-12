@@ -1,3 +1,12 @@
+# 0.3
+Release date: Apr. 12, 2025
+
+## Updates
+
+1. Be able to set note highlight area to have fixed width, instead of adjusting to actual note width provided by MuseScore. Default fixed width is calculated from the original mscz file.
+2. Added a button to link audio delay to render offset.
+3. Will not use CPU for render if GPU is available by default.
+
 # 0.2
 Release date: Mar. 31, 2025
 

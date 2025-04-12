@@ -46,10 +46,6 @@ class FFmpegHelpAction(argparse.Action):
         )
         print("Your arguments will be inserted after the input file, but before the output file.", file=sys.stderr)
         print("So you can add things like audio input, encoder settings, etc.", file=sys.stderr)
-        print(
-            "Before passing to ffmpeg, your command will be splited with shlex4all, so you can use quotes and escapes.",
-            file=sys.stderr,
-        )
         print(file=sys.stderr)
         parser.exit()
 

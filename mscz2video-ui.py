@@ -356,6 +356,7 @@ class MainWindow(QWidget):
         self.audio_delay_link.setToolTip(
             "With this enabled, audio delay will be automatically adjusted to start offset and start time"
         )
+        self.audio_delay_link.toggled.connect(self.update_audio_delay)
         self.video_encoder_label = QLabel("Video encoder:", self)
         self.video_encoder_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.video_encoder_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
