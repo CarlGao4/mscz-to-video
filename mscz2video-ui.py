@@ -1013,7 +1013,7 @@ class MainWindow(QWidget):
         extra_ffmpeg_args = []
         if self.current_audio_label.text() != "No audio file selected":
             if self.audio_delay.value() < 0:
-                extra_ffmpeg_args += ["-itsoffset", str(-self.audio_delay.value())]
+                extra_ffmpeg_args += ["-ss", str(-self.audio_delay.value())]
             extra_ffmpeg_args += ["-i", self.current_audio_label.text()]
             if self.audio_delay.value() > 0:
                 extra_ffmpeg_args += ["-af", f"adelay={int(self.audio_delay.value() * 1000)}:all=1"]

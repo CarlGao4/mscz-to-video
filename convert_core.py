@@ -35,7 +35,7 @@ import typing
 import xml.etree.ElementTree as ET
 import zipfile
 
-__version__ = "0.3"
+__version__ = "0.3.1"
 
 PIL.ImageFile.LOAD_TRUNCATED_IMAGES = True
 PIL.Image.MAX_IMAGE_PIXELS = None

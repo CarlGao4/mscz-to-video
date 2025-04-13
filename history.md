@@ -1,3 +1,10 @@
+# 0.3.1
+Release date: Apr. 14, 2025
+
+## Fixes
+
+1. Fixes negative ffmpeg audio delay misbehavior
+
 # 0.3
 Release date: Apr. 12, 2025
 
