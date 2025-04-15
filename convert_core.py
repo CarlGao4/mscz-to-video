@@ -35,7 +35,7 @@ import typing
 import xml.etree.ElementTree as ET
 import zipfile
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 PIL.ImageFile.LOAD_TRUNCATED_IMAGES = True
 PIL.Image.MAX_IMAGE_PIXELS = None
@@ -308,38 +308,26 @@ class Converter:
                         )
                     return (img[..., :3] * torch.tensor(255.0, dtype=img.dtype, device=device)).to(torch.uint8).cpu()
 
-    def load_score(self, input_mscz: pathlib.Path, use_svg: bool = False):
+    def load_score(self, input_mscz: pathlib.Path):
         self._input_mscz = input_mscz
-        self._use_svg = use_svg
         musescore = subprocess.Popen(
             [
                 self._musescore_path,
                 "--score-media",
+                "-r",
+                "330",
                 str(input_mscz.resolve()),
             ],
             stdout=subprocess.PIPE,
         )
         data = json.loads("{" + musescore.communicate()[0].decode("utf-8").split("{", 1)[1])
-        # Convert svg to png
         self._pngs: list[np.ndarray] = []
-        if self._use_svg:
-            import cairosvg  # type: ignore[import]
-
-            for page in data["svgs"]:
-                print(f"Converting svg to png... {len(self._pngs)} / {len(data['svgs'])}", end="\r", file=sys.stderr)
-                b = io.BytesIO()
-                cairosvg.svg2png(bytestring=base64.b64decode(page), write_to=b)
-                b.seek(0)
-                self._pngs.append(np.array(PIL.Image.open(b).convert("RGBA")).astype(np.float16) / 255)
-            print("Converting svg to png... Done          ", file=sys.stderr)
-            self._highlight_ratio: tuple[float, float] = (11, 11)
-        else:
-            for page in data["pngs"]:
-                print(f"Reading png... {len(self._pngs)} / {len(data['pngs'])}", end="\r", file=sys.stderr)
-                b = io.BytesIO(base64.b64decode(page))
-                self._pngs.append(np.array(PIL.Image.open(b).convert("RGBA")).astype(np.float16) / 255)
-            print("Reading png... Done          ", file=sys.stderr)
-            self._highlight_ratio = (12, 12)
+        for page in data["pngs"]:
+            print(f"Reading png... {len(self._pngs)} / {len(data['pngs'])}", end="\r", file=sys.stderr)
+            b = io.BytesIO(base64.b64decode(page))
+            self._pngs.append(np.array(PIL.Image.open(b).convert("RGBA")).astype(np.float16) / 255)
+        print("Reading png... Done          ", file=sys.stderr)
+        self._highlight_ratio = (12, 12)
 
         self._bars: list[tuple[int, int]] = []
         self._notes: list[tuple[int, int]] = []
@@ -828,7 +816,8 @@ class Converter:
                                         for spatium_text in (
                                             "".join(comb)
                                             for comb in itertools.product(
-                                                *((char.lower(), char.upper()) for char in "spatium"))
+                                                *((char.lower(), char.upper()) for char in "spatium")
+                                            )
                                         ):
                                             spatium_element = decoded_mscx.find(f".//{spatium_text}")
                                             if spatium_element is not None:
@@ -849,7 +838,8 @@ class Converter:
                                         for spatium_text in (
                                             "".join(comb)
                                             for comb in itertools.product(
-                                                *((char.lower(), char.upper()) for char in "spatium"))
+                                                *((char.lower(), char.upper()) for char in "spatium")
+                                            )
                                         ):
                                             spatium_element = decoded_mscx.find(f".//{spatium_text}")
                                             if spatium_element is not None:

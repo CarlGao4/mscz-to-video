@@ -1114,7 +1114,7 @@ class MainWindow(QWidget):
             self.exec_in_main(lambda: self.current_mscz_label.setText("Loading..."))
             if not mscz_path:
                 return
-            self.converter.load_score(pathlib.Path(mscz_path), use_svg=False)
+            self.converter.load_score(pathlib.Path(mscz_path))
         finally:
             self.exec_in_main(lambda: self.load_mscz_button.setDisabled(False))
             self.exec_in_main(lambda: self.current_mscz_label.setText("No MuseScore file loaded"))

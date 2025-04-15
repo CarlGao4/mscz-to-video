@@ -181,12 +181,6 @@ parser.add_argument(
     help="Resize function to use, crop will crop each page to the largest possible size with the same ratio, "
     "rescale will resize each page to target size, default crop",
 )
-parser.add_argument(
-    "--use-svg",
-    action="store_true",
-    dest="use_svg",
-    help="Use SVG exported by MuseScore instead of PNG. May clearer and requires CairoSVG but may fail sometimes",
-)
 parser.add_argument("--smooth-cursor", action="store_true", dest="smooth_cursor", help="Smooth cursor movement")
 parser.add_argument(
     "--fixed-note-width",
@@ -220,7 +214,7 @@ converter = convert_core.Converter(
     ffmpeg_path=args.ffmpeg_path,
     musescore_path=args.musescore_path,
 )
-converter.load_score(args.input_mscz, use_svg=args.use_svg)
+converter.load_score(args.input_mscz)
 converter.convert(
     args.output_video,
     cache_limit=args.cache_limit,
