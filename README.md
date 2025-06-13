@@ -1,4 +1,7 @@
+This document has been translated to [Simplified Chinese](README_zh-CN.md) for reference only.
+
 # mscz-to-video
+
 Render a MuseScore file to a video file
 
 <video controls playsinline style="width:100%;height:fit-content;padding-bottom:56.25%;overflow-y:hidden" class="video-js" data-setup="{}"><source src="https://mscz-video.carlgao4.workers.dev/FlowerDance/FlowerDance.m3u8">Your browser does not support the video tag.</video>
